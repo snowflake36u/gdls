@@ -1,0 +1,32 @@
+# 認証ファイル（リポジトリに含めない）
+credentials.json
+token.json
+
+# 出力ファイル
+*.tsv
+*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ローカル設定
+.env
+
+sandbox/
