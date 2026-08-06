@@ -22,12 +22,40 @@ def get_app_data_dir():
 # デフォルトパス
 APP_DATA_DIR = get_app_data_dir()
 
-CLIENT_SECRET_FILE = APP_DATA_DIR / "client_secret.json"
-TOKEN_FILE = APP_DATA_DIR / "token.json"
+# 環境変数またはデフォルトパスから取得する関数
+def get_client_secret_file(cli_arg=None):
+    """client_secret.json のパスを取得
+    
+    優先順序:
+    1. CLI引数が指定されている場合
+    2. 環境変数 SNOWY_GDL_CLIENT_SECRET_FILE
+    3. デフォルトパス
+    """
+    if cli_arg:
+        return Path(cli_arg)
+    env_path = os.getenv("SNOWY_GDL_CLIENT_SECRET_FILE")
+    if env_path:
+        return Path(env_path)
+    return APP_DATA_DIR / "client_secret.json"
 
-# 環境変数でオーバーライド可能
-CLIENT_SECRET_FILE = Path(os.getenv("SNOWY_GDL_CLIENT_SECRET_FILE", CLIENT_SECRET_FILE))
-TOKEN_FILE = Path(os.getenv("SNOWY_GDL_TOKEN_FILE", TOKEN_FILE))
+def get_token_file(cli_arg=None):
+    """token.json のパスを取得
+    
+    優先順序:
+    1. CLI引数が指定されている場合
+    2. 環境変数 SNOWY_GDL_TOKEN_FILE
+    3. デフォルトパス
+    """
+    if cli_arg:
+        return Path(cli_arg)
+    env_path = os.getenv("SNOWY_GDL_TOKEN_FILE")
+    if env_path:
+        return Path(env_path)
+    return APP_DATA_DIR / "token.json"
+
+# 後方互換性のため、デフォルト値を設定
+CLIENT_SECRET_FILE = get_client_secret_file()
+TOKEN_FILE = get_token_file()
 
 def ensure_directories():
     """必要なディレクトリを自動作成"""
