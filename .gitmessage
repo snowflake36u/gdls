@@ -1,0 +1,72 @@
+# [Rules]
+# - 1行目: コミットのサマリ。80文字以内（目安）。命令形
+#   - 形式: <type>(<scope>): <summary> （scope は任意）
+# - 2行目: 空行
+# - 3行目以降: 変更内容の説明。
+#   - 「なぜ(Why)」「何(What)」を簡潔に説明する
+#   - ハイフン開始の箇条書きを推奨
+#   - 参照: Issue/JIRA 番号は末尾に `(#123)` などで明示
+# - WIP のコミットはサマリに [WIP] を付す
+#   - pull request にマージする前に整理すること
+# - 可能な限り一つのコミットに <type>: <summary> は一つのみ
+# - 箇条書きのインデントはスペース2文字 (推奨)
+# - 以下の Type List は上の方が優位的。
+# ----------------
+# [Type List]
+# hotfix:   クリティカルなバグ修正（本番対応・最優先）
+# fix:      バグ修正（非クリティカル）
+# feat:     新機能、機能変更（ユーザー・APIに影響あり）
+# refactor: リファクタリング（機能変更がないコード整理）
+# perf:     パフォーマンス改善
+# docs:     ドキュメントの更新（README, docstring, Sphinx, MkDocs 等）
+# style:    コードスタイル（フォーマット、挙動や構造に影響を与えないタイポの修正等）
+# test:     テストの追加・修正
+# chore:    ビルド、パッケージ、依存関係（poetry/pip 等）
+# ci:       CI/workflow の設定変更（GitHub Actions・Secrets 等）
+# revert:   コミットの取り消し
+# ----------------
+# [Decision Flowchart for Type]
+# 1. 製品（アプリ）の動きが変わる？
+#   - YES (機能面) -> feat
+#   - YES (不具合対応) -> fix
+# 2. 実行速度、メモリ効率、リソース消費が改善される？（動作は不変）
+#   - YES -> perf
+# 3. コードの「質」や「構造」が変わる？（動作は不変）
+#   - YES（リファクタ） → refactor
+#   - YES（コード構造に影響がない誤字、フォーマット） → style
+# 4. ドキュメントのみの変更？
+#   - YES → docs
+# 5. それ以外
+#   - （開発ツール・設定・環境関連） → chore
+#   - （CI関連） -> ci
+# ----------------
+# [Python Specific Context]
+# - docstring / Sphinx / MkDocs の編集・更新 -> docs
+# - pyproject.toml / uv.lock / requirements.txt の更新 -> chore
+# - ruff / black / mypy 等の指摘修正 ->  style
+# - ロジック変更を伴わないファイル名・モジュール名・変数名の変更 -> refactor
+# - 不要になったモジュール・変数の削除 -> refactor
+# - 型ヒントの追加 -> refactor
+# - 将来的に実装する空のファイルの作成 (開発環境の準備・構成管理) -> chore
+# - 書きかけのコードのコミット -> サマリに接頭辞 [WIP] を付与
+# - 依存ライブラリの更新 (単なるアップデート) -> chore
+# - 依存ライブラリの更新 (脆弱性対応) -> fix / hotfix
+# - ロギング（logging）の追加・変更 (監視機能の追加) -> feat
+# - ロギング（logging）の追加・変更 (開発のための補助的な作業) -> chore
+# - インストーラ用のコード編集 -> chore
+# - アプリケーション配布のためのコード整理・調整 -> refactor
+# - アプリケーション配布のための設定作成・編集 -> chore
+# - 開発上のメタファイル(.gitignoreなど)の編集 -> chore
+# ----------------
+# [Example 1]
+# feat(api): add users endpoint for bulk import
+#
+# - Why: need to import many users from legacy system
+# - What: add POST /api/users/bulk that accepts CSV and returns job id
+# - Note: background job implemented; see #456
+# ----------------
+# [Example 2]
+# feat: [WIP] implement OAuth2 authentication
+#
+# - Add basic token validation logic
+# - Still need to implement token refresh flow
