@@ -5,53 +5,73 @@ import platform
 APP_NAME = "GoogleDriveLister"
 
 def get_app_data_dir():
-	"""OS別のアプリデータディレクトリを取得"""
+	"""OS別のアプリデータディレクトリを取得
+	
+	Returns:
+		アプリケーションデータディレクトリのパス
+		- Windows: %APPDATA%\SnowyTools\<APP_NAME>
+		- macOS/Linux: ~/.config/SnowyTools/<APP_NAME>
+	"""
 	system = platform.system()
 	if system == "Windows":
-		# Windows: %APPDATA%\SnowyTools\<APP_NAME>
 		app_data = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))
-	elif system == "Darwin":
-		# macOS: ~/.config/SnowyTools/<APP_NAME>
-		app_data = Path.home() / ".config"
-	else:
-		# Linux: ~/.config/SnowyTools/<APP_NAME>
+	else:  # macOS, Linux
 		app_data = Path.home() / ".config"
 	
 	return app_data / "SnowyTools" / APP_NAME
 
+def get_file_path(env_var: str, default_filename: str, cli_arg: str | None = None) -> Path:
+	"""ファイルパスを取得（CLI引数→環境変数→デフォルトの優先順序）
+	
+	Args:
+		env_var: 環境変数名
+		default_filename: デフォルトファイル名
+		cli_arg: CLI引数で指定されたパス
+	
+	Returns:
+		ファイルのパス
+	"""
+	if cli_arg:
+		return Path(cli_arg)
+	env_path = os.getenv(env_var)
+	if env_path:
+		return Path(env_path)
+	return APP_DATA_DIR / default_filename
+
 # デフォルトパス
 APP_DATA_DIR = get_app_data_dir()
 
-# 環境変数またはデフォルトパスから取得する関数
-def get_client_secret_file(cli_arg=None):
+def get_client_secret_file(cli_arg: str | None = None) -> Path:
 	"""client_secret.json のパスを取得
 	
 	優先順序:
 	1. CLI引数が指定されている場合
 	2. 環境変数 SNOWY_GDL_CLIENT_SECRET_FILE
 	3. デフォルトパス
+	
+	Args:
+		cli_arg: CLI引数で指定されたパス
+	
+	Returns:
+		client_secret.json のパス
 	"""
-	if cli_arg:
-		return Path(cli_arg)
-	env_path = os.getenv("SNOWY_GDL_CLIENT_SECRET_FILE")
-	if env_path:
-		return Path(env_path)
-	return APP_DATA_DIR / "client_secret.json"
+	return get_file_path("SNOWY_GDL_CLIENT_SECRET_FILE", "client_secret.json", cli_arg)
 
-def get_token_file(cli_arg=None):
+def get_token_file(cli_arg: str | None = None) -> Path:
 	"""token.json のパスを取得
 	
 	優先順序:
 	1. CLI引数が指定されている場合
 	2. 環境変数 SNOWY_GDL_TOKEN_FILE
 	3. デフォルトパス
+	
+	Args:
+		cli_arg: CLI引数で指定されたパス
+	
+	Returns:
+		token.json のパス
 	"""
-	if cli_arg:
-		return Path(cli_arg)
-	env_path = os.getenv("SNOWY_GDL_TOKEN_FILE")
-	if env_path:
-		return Path(env_path)
-	return APP_DATA_DIR / "token.json"
+	return get_file_path("SNOWY_GDL_TOKEN_FILE", "token.json", cli_arg)
 
 # 後方互換性のため、デフォルト値を設定
 CLIENT_SECRET_FILE = get_client_secret_file()
