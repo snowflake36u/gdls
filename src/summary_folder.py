@@ -70,9 +70,7 @@ def get_drive_service(client_secret_file: str | None = None, token_file: str | N
 			creds.refresh(Request())
 		else:
 			if not secret_path.exists():
-				raise FileNotFoundError(
-					f"Client Secret file not found. Please place client_secret.json at: {secret_path}. See SETUP.md for instructions on how to obtain it."
-				)
+				raise FileNotFoundError(f"Client Secret file not found at: {secret_path}")
 			flow = InstalledAppFlow.from_client_secrets_file(str(secret_path), SCOPES)
 			# ローカルサーバーを起動して認証
 			creds = flow.run_local_server(port=0)
@@ -257,18 +255,29 @@ def main():
 	
 	if not target_id:
 		print("Error: Unable to extract valid folder ID.")
-	else:
+		return
+	
+	try:
 		service = get_drive_service(
 			client_secret_file=args.client_secret,
 			token_file=args.token_file
 		)
-		export_folder_data(
-			service,
-			target_id,
-			output_filename='drive_contents.tsv',
-			append_mode=append_mode,
-			output_headers=output_headers
-		)
+	except FileNotFoundError as e:
+		print(f"Error: {e}")
+		print("Please place Client Secret file at the required path or specify it via --client-secret.")
+		print("See SETUP.md for instructions on how to obtain it.")
+		return
+	except Exception as e:
+		print(f"An unexpected error occurred: {e}")
+		return
+	
+	export_folder_data(
+		service,
+		target_id,
+		output_filename='drive_contents.tsv',
+		append_mode=append_mode,
+		output_headers=output_headers
+	)
 
 if __name__ == '__main__':
 	main()
