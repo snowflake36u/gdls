@@ -14,9 +14,6 @@ from config import ensure_directories, get_output_path, get_client_secret_file, 
 # スコープの設定（読み取り専用）
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
-# Configure basic logging for CLI user messages
-logging.basicConfig(level=logging.INFO, format='%(message)s')
-
 # 動作設定
 # 指定フォルダの直下の要素のみをリストアップします。
 # 子要素がフォルダの場合、内部の子孫要素のデータを集約して合計ファイルサイズや最古作成日時を計算します。
@@ -110,9 +107,10 @@ def get_required_api_fields(output_headers: list[str]) -> tuple[list[str], list[
 	
 	return list(root_fields), list(descendant_fields)
 
-def fetch_children(service, folder_id: str, api_fields: list[str]) -> list[dict]:
+def fetch_children(service, folder_id: str, api_fields: list[str], include_trashed: bool = False) -> list[dict]:
 	"""指定フォルダの直下の要素一覧を取得する"""
-	query = f"'{folder_id}' in parents and trashed=false"
+	trashed_query = "" if include_trashed else " and trashed=false"
+	query = f"'{folder_id}' in parents{trashed_query}"
 	fields = f"nextPageToken, files({', '.join(api_fields)})"
 	
 	children = []
@@ -134,12 +132,12 @@ def fetch_children(service, folder_id: str, api_fields: list[str]) -> list[dict]
 			break
 	return children
 
-def iter_descendants(service, folder_id: str, api_fields: list[str]):
+def iter_descendants(service, folder_id: str, api_fields: list[str], include_trashed: bool = False):
 	"""フォルダ配下の全子孫要素をスタックを用いて反復処理で取得・yieldする"""
 	stack = [folder_id]
 	while stack:
 		current_id = stack.pop()
-		children = fetch_children(service, current_id, api_fields)
+		children = fetch_children(service, current_id, api_fields, include_trashed)
 		for child in children:
 			yield child
 			if child.get('mimeType') == 'application/vnd.google-apps.folder':
@@ -157,10 +155,11 @@ def is_folder_item(item: dict) -> bool:
 def aggregate_descendants(
 		service,
 		folder_id: str,
-		desc_api_fields: list[str]
+		desc_api_fields: list[str],
+		include_trashed: bool = False
 ) -> tuple[str, int, int]:
 	"""フォルダの子孫要素を集約し、最古作成日時、合計サイズ、合計quotaを返す
-	
+
 	Returns:
 		(最古作成日時, 合計サイズ, 合計quota)
 	"""
@@ -168,7 +167,7 @@ def aggregate_descendants(
 	total_size = 0
 	total_quota = 0
 	
-	descendants_generator = iter_descendants(service, folder_id, desc_api_fields)
+	descendants_generator = iter_descendants(service, folder_id, desc_api_fields, include_trashed)
 	descendant_iter = tqdm(descendants_generator, desc="Processing descendant items", unit=" item", position=1, leave=False)
 	
 	for desc in descendant_iter:
@@ -189,17 +188,19 @@ def build_item_record(
 		headers: list[str],
 		service=None,
 		desc_api_fields: list[str] | None = None,
-		needs_descendant_agg: bool = False
+		needs_descendant_agg: bool = False,
+		include_trashed: bool = False
 ) -> dict:
 	"""フォルダアイテムのレコードを構築する
-	
+
 	Args:
 		item: APIから取得したアイテム
 		headers: 出力対象のヘッダー一覧
 		service: Google Drive APIサービス（子孫集約が必要な場合）
 		desc_api_fields: 子孫要素取得に必要なAPIフィールド
 		needs_descendant_agg: 子孫要素の集約が必要か
-	
+		include_trashed: ゴミ箱内のファイルも含めて集計・出力するかどうか。
+
 	Returns:
 		構築されたレコード辞書
 	"""
@@ -213,7 +214,7 @@ def build_item_record(
 	# フォルダで子孫集約が必要な場合、子孫要素を集約
 	if is_folder_item(item) and needs_descendant_agg and service:
 		desc_oldest, desc_size, desc_quota = aggregate_descendants(
-			service, item['id'], desc_api_fields or []
+			service, item['id'], desc_api_fields or [], include_trashed
 		)
 		if desc_oldest:
 			oldest_date = desc_oldest if not created_time or desc_oldest < created_time else created_time
@@ -221,7 +222,7 @@ def build_item_record(
 		quota += desc_quota
 	
 	# レコードを構築
-	record = {}
+	record = { }
 	for header in headers:
 		if header == 'owners':
 			record[header] = owner_name
@@ -243,7 +244,7 @@ def write_records_to_tsv(
 		append_mode: bool = False
 ) -> None:
 	"""レコードをTSVファイルに書き込む
-	
+
 	Args:
 		records: 書き込むレコード一覧
 		headers: ヘッダー一覧
@@ -263,19 +264,21 @@ def list_drive_folder(
 		target_folder_id: str,
 		output_filename: str = 'drive_contents.tsv',
 		append_mode: bool = False,
-		output_headers: list[str] | None = None
+		output_headers: list[str] | None = None,
+		include_trashed: bool = False
 ) -> None:
 	"""フォルダ内の情報を取得し、TSV に出力する
 
 	指定フォルダの直下の要素のみをリストアップします。
 	子要素がフォルダの場合、内部の子孫要素のデータを集約します。
-	
+
 	Args:
 		service: Google Drive APIサービス
 		target_folder_id: 対象フォルダID
 		output_filename: 出力ファイル名
 		append_mode: 既存ファイルに追記するか
 		output_headers: 出力対象のヘッダー（Noneの場合はデフォルト）
+		include_trashed: ゴミ箱内のファイルも含めて集計・出力するかどうか。
 	"""
 	headers = output_headers if output_headers is not None else DEFAULT_OUTPUT_HEADERS
 	output_path = get_output_path(output_filename)
@@ -289,7 +292,7 @@ def list_drive_folder(
 	logger.info("Fetching data from Google Drive...")
 	
 	# 指定フォルダの直下要素を取得
-	root_children = fetch_children(service, target_folder_id, root_api_fields)
+	root_children = fetch_children(service, target_folder_id, root_api_fields, include_trashed)
 	
 	# 直下のアイテムを処理
 	all_records = []
@@ -301,7 +304,8 @@ def list_drive_folder(
 			headers,
 			service=service,
 			desc_api_fields=desc_api_fields,
-			needs_descendant_agg=needs_descendant_agg
+			needs_descendant_agg=needs_descendant_agg,
+			include_trashed=include_trashed
 		)
 		all_records.append(record)
 	
@@ -314,7 +318,7 @@ def list_drive_folder(
 
 def parse_arguments():
 	"""コマンドライン引数を解析する
-	
+
 	Returns:
 		パース済みの引数名前空間
 	"""
@@ -322,6 +326,15 @@ def parse_arguments():
 		description='Export Google Drive folder contents to TSV'
 	)
 	parser.add_argument('id', help='Google Drive folder URL or folder ID')
+	
+	parser.add_argument('-o', '--output', type=str, default='drive_contents.tsv',
+							  help='Output TSV file path (default: drive_contents.tsv)')
+	parser.add_argument('--include-trashed', action='store_true',
+							  help='Include trashed files in the calculation and output')
+	parser.add_argument('--log-level', type=str, default='INFO',
+							  choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+							  help='Set the logging level (default: INFO)')
+	
 	parser.add_argument('-a', '--append', action='store_true', help='Append to existing output file')
 	parser.add_argument('-f', '--fields', help='Attributes to export (comma separated)')
 	parser.add_argument('--client-secret', type=str, default=None,
@@ -333,10 +346,10 @@ def parse_arguments():
 
 def parse_output_headers(fields_arg: str | None) -> list[str] | None:
 	"""フィールド引数を解析して出力ヘッダーを取得する
-	
+
 	Args:
 		fields_arg: カンマ区切りのフィールド文字列
-	
+
 	Returns:
 		フィールド一覧、または None（デフォルトを使用する場合）
 	"""
@@ -348,10 +361,14 @@ def parse_output_headers(fields_arg: str | None) -> list[str] | None:
 
 def main():
 	"""メイン処理
-	
+
 	Google Drive フォルダの内容を取得し、TSV ファイルにエクスポートする
 	"""
 	args = parse_arguments()
+	
+	# コマンドライン引数に基づいてロギングを設定
+	numeric_level = getattr(logging, args.log_level.upper(), None)
+	logging.basicConfig(level=numeric_level, format='%(message)s')
 	
 	target_id = extract_folder_id(args.id)
 	if not target_id:
@@ -380,9 +397,10 @@ def main():
 	list_drive_folder(
 		service,
 		target_id,
-		output_filename='drive_contents.tsv',
+		output_filename=args.output,
 		append_mode=args.append,
-		output_headers=output_headers
+		output_headers=output_headers,
+		include_trashed=args.include_trashed
 	)
 
 if __name__ == '__main__':
