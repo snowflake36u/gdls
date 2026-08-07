@@ -1,8 +1,6 @@
-import os
+import argparse
 import csv
 import re
-import argparse
-from pathlib import Path
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -70,7 +68,7 @@ def get_drive_service(client_secret_file: str | None = None, token_file: str | N
 			creds.refresh(Request())
 		else:
 			if not secret_path.exists():
-				raise FileNotFoundError(f"Client Secret file not found at: {secret_path}")
+				raise FileNotFoundError(f"Client secret file not found at: {secret_path}")
 			flow = InstalledAppFlow.from_client_secrets_file(str(secret_path), SCOPES)
 			# ローカルサーバーを起動して認証
 			creds = flow.run_local_server(port=0)
