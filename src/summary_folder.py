@@ -1,6 +1,7 @@
 import argparse
 import csv
 import re
+import logging
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -10,6 +11,9 @@ from config import ensure_directories, get_output_path, get_client_secret_file, 
 
 # スコープの設定（読み取り専用）
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+
+# Configure basic logging for CLI user messages
+logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 # 動作設定
 # 指定フォルダの直下の要素のみをリストアップします。
@@ -160,7 +164,9 @@ def export_folder_data(
 		h in headers for h in ('oldestDescendantCreationTime', 'size', 'quotaBytesUsed')
 	)
 	
-	print("Fetching data from Google Drive...")
+	# User-facing progress/info messages are logged in English
+	logger = logging.getLogger('GoogleDriveLister')
+	logger.info("Fetching data from Google Drive...")
 	
 	# 指定フォルダの直下要素を取得
 	root_children = fetch_children(service, target_folder_id, root_api_fields)
@@ -223,9 +229,9 @@ def export_folder_data(
 			writer.writeheader()
 		writer.writerows(all_records)
 	
-	print("Export completed!")
-	print(f"Items: {len(all_records)}")
-	print(f"Output: {output_path}")
+	logger.info("Export completed!")
+	logger.info(f"Items: {len(all_records)}")
+	logger.info(f"Output: {output_path}")
 
 def main():
 	# Google Drive フォルダ URL または ID の入力受付
@@ -252,7 +258,7 @@ def main():
 			output_headers = fields_list
 	
 	if not target_id:
-		print("Error: Unable to extract valid folder ID.")
+		logging.error("Error: Unable to extract a valid folder ID.")
 		return
 	
 	try:
@@ -261,12 +267,15 @@ def main():
 			token_file=args.token_file
 		)
 	except FileNotFoundError as e:
-		print(f"Error: {e}")
-		print("Please place Client Secret file at the required path or specify it via --client-secret.")
-		print("See SETUP.md for instructions on how to obtain it.")
+		logging.error(f"Error: {e}")
+		logging.error("Please place the client secret JSON file at the expected location or provide its path via --client-secret.")
+		logging.error("See README.md for instructions on obtaining OAuth client credentials.")
+		return
+	except KeyboardInterrupt:
+		logging.error("Operation cancelled by user.")
 		return
 	except Exception as e:
-		print(f"An unexpected error occurred: {e}")
+		logging.error(f"An unexpected error occurred: {e}")
 		return
 	
 	export_folder_data(
