@@ -311,6 +311,23 @@ def list_drive_folder(
 	else:
 		# 指定フォルダの直下要素を取得
 		root_children = fetch_children(service, target_folder_id, root_api_fields, include_trashed)
+		
+		# 直下要素が0件だった場合、対象ID自体が非フォルダである可能性があるので確認する
+		if len(root_children) == 0:
+			try:
+				# 0件だった場合のみ、対象の MIME タイプを確認 (必要な場合のみ呼び出し)
+				target_info = service.files().get(
+					fileId=target_folder_id,
+					fields='mimeType',
+					supportsAllDrives=True
+				).execute()
+				
+				if target_info.get('mimeType') != 'application/vnd.google-apps.folder':
+					logger.warning(f"Warning: Specified ID '{target_folder_id}' is not a folder.")
+					logger.warning("If you want to fetch information for this file itself, please use the '--self' option.")
+			except Exception as e:
+				# IDが存在しないかアクセス権がない場合などの例外ハンドリング
+				logger.debug(f"Target item check skipped or failed: {e}")
 	
 	# アイテムを処理
 	all_records = []
