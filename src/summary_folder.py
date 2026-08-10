@@ -265,12 +265,15 @@ def list_drive_folder(
 		output_filename: str = 'drive_contents.tsv',
 		append_mode: bool = False,
 		output_headers: list[str] | None = None,
-		include_trashed: bool = False
+		include_trashed: bool = False,
+		self_target: bool = False
 ) -> None:
 	"""フォルダ内の情報を取得し、TSV に出力する
 
-	指定フォルダの直下の要素のみをリストアップします。
+	指定フォルダの直下の要素をリストアップします。
 	子要素がフォルダの場合、内部の子孫要素のデータを集約します。
+
+	self_target=True の場合は、指定された ID そのものの情報のみを取得します。
 
 	Args:
 		service: Google Drive APIサービス
@@ -279,6 +282,7 @@ def list_drive_folder(
 		append_mode: 既存ファイルに追記するか
 		output_headers: 出力対象のヘッダー（Noneの場合はデフォルト）
 		include_trashed: ゴミ箱内のファイルも含めて集計・出力するかどうか。
+		self_target: 対象ファイル・フォルダ自体の情報のみを出力するかどうか。
 	"""
 	headers = output_headers if output_headers is not None else DEFAULT_OUTPUT_HEADERS
 	output_path = get_output_path(output_filename)
@@ -291,10 +295,24 @@ def list_drive_folder(
 	logger = logging.getLogger('GoogleDriveLister')
 	logger.info("Fetching data from Google Drive...")
 	
-	# 指定フォルダの直下要素を取得
-	root_children = fetch_children(service, target_folder_id, root_api_fields, include_trashed)
+	if self_target:
+		# 対象アイテムそのものを1つだけ取得
+		fields_str = ', '.join(root_api_fields)
+		try:
+			item = service.files().get(
+				fileId=target_folder_id,
+				fields=fields_str,
+				supportsAllDrives=True
+			).execute()
+			root_children = [item]
+		except Exception as e:
+			logger.error(f"Failed to fetch target item: {e}")
+			return
+	else:
+		# 指定フォルダの直下要素を取得
+		root_children = fetch_children(service, target_folder_id, root_api_fields, include_trashed)
 	
-	# 直下のアイテムを処理
+	# アイテムを処理
 	all_records = []
 	root_iter = tqdm(root_children, desc="Processing root items", unit=" item", position=0)
 	
@@ -320,23 +338,26 @@ def parse_arguments():
 	"""コマンドライン引数を解析する
 
 	Returns:
-		パース済みの引数名前空間
+	  パース済みの引数名前空間
 	"""
 	parser = argparse.ArgumentParser(
 		description='Export Google Drive folder contents to TSV'
 	)
 	parser.add_argument('id', help='Google Drive folder URL or folder ID')
-	
-	parser.add_argument('-o', '--output', type=str, default='drive_contents.tsv',
-							  help='Output TSV file path (default: drive_contents.tsv)')
 	parser.add_argument('--include-trashed', action='store_true',
 							  help='Include trashed files in the calculation and output')
+	parser.add_argument('-s', '--self', action='store_true',
+							  help='Fetch and output information ONLY for the specified target file/folder itself')
+	parser.add_argument('-f', '--fields', help='Attributes to export (comma separated)')
+	
 	parser.add_argument('--log-level', type=str, default='INFO',
 							  choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
 							  help='Set the logging level (default: INFO)')
 	
+	parser.add_argument('-o', '--output', type=str, default='drive_contents.tsv',
+							  help='Output TSV file path (default: drive_contents.tsv)')
 	parser.add_argument('-a', '--append', action='store_true', help='Append to existing output file')
-	parser.add_argument('-f', '--fields', help='Attributes to export (comma separated)')
+	
 	parser.add_argument('--client-secret', type=str, default=None,
 							  help='Path to client_secret.json (overrides SNOWY_GDL_CLIENT_SECRET_FILE env var)')
 	parser.add_argument('--token-file', type=str, default=None,
@@ -399,7 +420,8 @@ def main():
 		output_filename=args.output,
 		append_mode=args.append,
 		output_headers=output_headers,
-		include_trashed=args.include_trashed
+		include_trashed=args.include_trashed,
+		self_target=args.self
 	)
 
 if __name__ == '__main__':
