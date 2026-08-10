@@ -385,7 +385,6 @@ def main():
 	except FileNotFoundError as e:
 		logging.error(f"Error: {e}")
 		logging.error("Please place the client secret JSON file at the expected location or provide its path via --client-secret.")
-		logging.error("See README.md for instructions on obtaining OAuth client credentials.")
 		return
 	except KeyboardInterrupt:
 		logging.error("Operation cancelled by user.")
