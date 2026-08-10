@@ -38,12 +38,20 @@ pip install -r requirements.txt
 
 ### 3. 実行
 
+`<YOUR_FOLDER_ID>` を該当するドライブフォルダのIDで置き換えてください。
+
 ```bash
 cd src
-python summary_folder.py "[https://drive.google.com/drive/folders/YOUR_FOLDER_ID](https://drive.google.com/drive/folders/YOUR_FOLDER_ID)"
+python summary_folder.py <YOUR_FOLDER_ID>"
 ```
 
-※ フォルダ ID を直接指定することも可能です（例: `python summary_folder.py YOUR_FOLDER_ID`）。
+または
+
+```bash
+cd src
+python summary_folder.py https://drive.google.com/drive/folders/<YOUR_FOLDER_ID>"
+```
+
 ※ 実行したディレクトリに `drive_contents.tsv` という名前で結果が出力されます。
 
 ## 出力データ仕様
@@ -54,16 +62,16 @@ python summary_folder.py "[https://drive.google.com/drive/folders/YOUR_FOLDER_ID
 |------|------|
 | id | Google Drive ファイルID |
 | webViewLink | Google Drive リンク |
-| name | ファイル/フォルダ名 |
+| name | アイテム名 |
 | mimeType | ファイルタイプ |
-| description | ファイル/フォルダの説明 |
+| description | アイテムの説明 |
 | owners | 所有者名 |
 | modifiedTime | 更新日時 |
 | viewedByMeTime | 最終閲覧日時 |
 | createdTime | 作成日時 |
-| oldestDescendantCreationTime | 最古の子孫アイテム作成日時 |
-| size | ファイル/フォルダサイズ（バイト、子孫を含む） |
-| quotaBytesUsed | 容量使用量（バイト、子孫を含む） |
+| oldestDescendantCreationTime | 子孫アイテムのうち最古の作成日時 |
+| size | ファイル/フォルダサイズ（バイト単位。子孫を含む） |
+| quotaBytesUsed | 容量使用量（バイト単位。子孫を含む） |
 
 **注**: フォルダの `size` と `quotaBytesUsed` は、そのフォルダ配下にある全子孫要素の合計値として計算されます。
 
