@@ -2,6 +2,7 @@ import argparse
 import csv
 import re
 import logging
+import sys
 from pathlib import Path
 
 from google.oauth2.credentials import Credentials
@@ -156,7 +157,8 @@ def aggregate_descendants(
 		service,
 		folder_id: str,
 		desc_api_fields: list[str],
-		include_trashed: bool = False
+		include_trashed: bool = False,
+		quiet: bool = False,
 ) -> tuple[str, int, int]:
 	"""フォルダの子孫要素を集約し、最古作成日時、合計サイズ、合計quotaを返す
 
@@ -168,7 +170,7 @@ def aggregate_descendants(
 	total_quota = 0
 	
 	descendants_generator = iter_descendants(service, folder_id, desc_api_fields, include_trashed)
-	descendant_iter = tqdm(descendants_generator, desc="Processing descendant items", unit=" item", position=1, leave=False)
+	descendant_iter = tqdm(descendants_generator, desc="Processing descendant items", unit=" item", position=1, leave=False, disable=quiet)
 	
 	for desc in descendant_iter:
 		desc_size = int(desc.get('size', 0))
@@ -189,7 +191,8 @@ def build_item_record(
 		service=None,
 		desc_api_fields: list[str] | None = None,
 		needs_descendant_agg: bool = False,
-		include_trashed: bool = False
+		include_trashed: bool = False,
+		quiet: bool = False,
 ) -> dict:
 	"""フォルダアイテムのレコードを構築する
 
@@ -200,6 +203,7 @@ def build_item_record(
 		desc_api_fields: 子孫要素取得に必要なAPIフィールド
 		needs_descendant_agg: 子孫要素の集約が必要か
 		include_trashed: ゴミ箱内のファイルも含めて集計・出力するかどうか。
+		quiet: 進捗バーの出力を抑制するかどうか。
 
 	Returns:
 		構築されたレコード辞書
@@ -214,7 +218,7 @@ def build_item_record(
 	# フォルダで子孫集約が必要な場合、子孫要素を集約
 	if is_folder_item(item) and needs_descendant_agg and service:
 		desc_oldest, desc_size, desc_quota = aggregate_descendants(
-			service, item['id'], desc_api_fields or [], include_trashed
+			service, item['id'], desc_api_fields or [], include_trashed, quiet=quiet
 		)
 		if desc_oldest:
 			oldest_date = desc_oldest if not created_time or desc_oldest < created_time else created_time
@@ -240,33 +244,43 @@ def build_item_record(
 def write_records_to_tsv(
 		records: list[dict],
 		headers: list[str],
-		output_path: Path,
-		append_mode: bool = False
+		output: Path | None,
+		append: bool = False
 ) -> None:
-	"""レコードをTSVファイルに書き込む
+	"""レコードをTSVファイルまたは標準出力に書き込む
+
+	出力先が指定されていない場合は標準出力に書き出し、後続のパイプ処理などを可能にする。
 
 	Args:
 		records: 書き込むレコード一覧
 		headers: ヘッダー一覧
-		output_path: 出力ファイルパス
-		append_mode: 追記モード
+		output: 出力ファイルパス。None の場合は標準出力を使用する
+		append: 追記モード
 	"""
-	write_mode = 'a+' if append_mode else 'w'
+	if output:
+		write_mode = 'a+' if append else 'w'
+		f = open(str(output), write_mode, encoding='utf-8', newline='')
+	else:
+		f = sys.stdout
 	
-	with open(str(output_path), write_mode, encoding='utf-8', newline='') as f:
+	try:
 		writer = csv.DictWriter(f, fieldnames=headers, delimiter='\t')
-		if not append_mode:
+		if not output or not append:
 			writer.writeheader()
 		writer.writerows(records)
+	finally:
+		if output:
+			f.close()
 
 def list_drive_folder(
 		service,
 		target_folder_id: str,
-		output_filename: str = 'drive_contents.tsv',
-		append_mode: bool = False,
-		output_headers: list[str] | None = None,
+		fields: list[str] | None = None,
 		include_trashed: bool = False,
-		self_target: bool = False
+		self_target: bool = False,
+		output: str | None = None,
+		append_mode: bool = False,
+		quiet: bool = False,
 ) -> None:
 	"""フォルダ内の情報を取得し、TSV に出力する
 
@@ -278,18 +292,19 @@ def list_drive_folder(
 	Args:
 		service: Google Drive APIサービス
 		target_folder_id: 対象フォルダID
-		output_filename: 出力ファイル名
+		output: 出力ファイル名。None の場合は標準出力
 		append_mode: 既存ファイルに追記するか
-		output_headers: 出力対象のヘッダー（Noneの場合はデフォルト）
+		fields: 出力対象のヘッダー（Noneの場合は自動的に判定する）
 		include_trashed: ゴミ箱内のファイルも含めて集計・出力するかどうか。
 		self_target: 対象ファイル・フォルダ自体の情報のみを出力するかどうか。
+		quiet: 進捗バーの出力を抑制するかどうか。
 	"""
-	headers = output_headers if output_headers is not None else DEFAULT_OUTPUT_HEADERS
-	output_path = get_output_path(output_filename)
+	_fields = fields if fields is not None else DEFAULT_OUTPUT_HEADERS
+	output_path = get_output_path(output) if output else None
 	
-	root_api_fields, desc_api_fields = get_required_api_fields(headers)
+	root_api_fields, desc_api_fields = get_required_api_fields(_fields)
 	needs_descendant_agg = any(
-		h in headers for h in ('oldestDescendantCreationTime', 'size', 'quotaBytesUsed')
+		h in _fields for h in ('oldestDescendantCreationTime', 'size', 'quotaBytesUsed')
 	)
 	
 	logger = logging.getLogger('GoogleDriveLister')
@@ -331,31 +346,32 @@ def list_drive_folder(
 	
 	# アイテムを処理
 	all_records = []
-	root_iter = tqdm(root_children, desc="Processing root items", unit=" item", position=0)
+	root_iter = tqdm(root_children, desc="Processing root items", unit=" item", position=0, disable=quiet)
 	
 	for child in root_iter:
 		record = build_item_record(
 			child,
-			headers,
+			_fields,
 			service=service,
 			desc_api_fields=desc_api_fields,
 			needs_descendant_agg=needs_descendant_agg,
-			include_trashed=include_trashed
+			include_trashed=include_trashed,
+			quiet=quiet,
 		)
 		all_records.append(record)
 	
 	# TSV 出力
-	write_records_to_tsv(all_records, headers, output_path, append_mode)
+	write_records_to_tsv(all_records, _fields, output_path, append_mode)
 	
-	logger.info("Export completed!")
 	logger.info(f"Items: {len(all_records)}")
-	logger.info(f"Output: {output_path}")
+	if output_path:
+		logger.info(f"Output to: {output_path}")
 
 def parse_arguments():
 	"""コマンドライン引数を解析する
 
 	Returns:
-	  パース済みの引数名前空間
+		パース済みの引数名前空間
 	"""
 	parser = argparse.ArgumentParser(
 		description='Export Google Drive folder contents to TSV'
@@ -371,14 +387,17 @@ def parse_arguments():
 							  choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
 							  help='Set the logging level (default: INFO)')
 	
-	parser.add_argument('-o', '--output', type=str, default='drive_contents.tsv',
-							  help='Output TSV file path (default: drive_contents.tsv)')
-	parser.add_argument('-a', '--append', action='store_true', help='Append to existing output file')
-	
 	parser.add_argument('--client-secret', type=str, default=None,
 							  help='Path to client_secret.json (overrides SNOWY_GDL_CLIENT_SECRET_FILE env var)')
 	parser.add_argument('--token-file', type=str, default=None,
 							  help='Path to token.json (overrides SNOWY_GDL_TOKEN_FILE env var)')
+	
+	parser.add_argument('-o', '--output', type=str,
+							  help='Output TSV file path')
+	parser.add_argument('-a', '--append', action='store_true', help='Append to existing output file')
+	
+	parser.add_argument('-q', '--quiet', action='store_true',
+							  help='Suppress progress bar and non-error log messages')
 	
 	return parser.parse_args()
 
@@ -400,13 +419,17 @@ def parse_output_headers(fields_arg: str | None) -> list[str] | None:
 def main():
 	"""メイン処理
 
-	Google Drive フォルダの内容を取得し、TSV ファイルにエクスポートする
+	Google Drive フォルダの内容を取得し、TSV ファイルまたは標準出力にエクスポートする
 	"""
 	args = parse_arguments()
 	
-	# コマンドライン引数に基づいてロギングを設定
+	if args.quiet:
+		# ログレベルをERROR以上に強制し、エラー出力を非表示にする
+		args.log_level = 'ERROR'
+	
+	# コマンドライン引数に基づいてロギングを設定し、標準エラー出力に振り向ける
 	numeric_level = getattr(logging, args.log_level.upper(), None)
-	logging.basicConfig(level=numeric_level, format='%(message)s')
+	logging.basicConfig(level=numeric_level, format='%(message)s', stream=sys.stderr)
 	
 	target_id = extract_folder_id(args.id)
 	if not target_id:
@@ -434,11 +457,12 @@ def main():
 	list_drive_folder(
 		service,
 		target_id,
-		output_filename=args.output,
-		append_mode=args.append,
-		output_headers=output_headers,
+		fields=output_headers,
 		include_trashed=args.include_trashed,
-		self_target=args.self
+		self_target=args.self,
+		output=args.output,
+		append_mode=args.append,
+		quiet=args.quiet,
 	)
 
 if __name__ == '__main__':
