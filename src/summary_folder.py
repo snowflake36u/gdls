@@ -30,14 +30,16 @@ DEFAULT_OUTPUT_HEADERS = [
 	'modifiedTime',
 	'viewedByMeTime',
 	'createdTime',
-	'oldestDescendantCreationTime',
+	'oldestCreatedTime',
 	'size',
-	'quotaBytesUsed'
+	'quotaBytesUsed',
 ]
 
 # 出力属性と必要なAPIフィールドの対応マッピング
 HEADER_API_DEPENDENCIES: dict[str, list[str]] = {
-	'oldestDescendantCreationTime': ['createdTime'],
+	'oldestCreatedTime': ['createdTime'],
+	'totalSize': ['size'],
+	'totalQuotaBytesUsed': ['quotaBytesUsed'],
 	'owners': ['owners'],
 	'size': ['size'],
 	'quotaBytesUsed': ['quotaBytesUsed'],
@@ -46,9 +48,9 @@ HEADER_API_DEPENDENCIES: dict[str, list[str]] = {
 
 # 子孫要素の取得・集約が必要な属性一覧
 DESCENDANT_AGGREGATED_HEADERS: set[str] = {
-	'oldestDescendantCreationTime',
-	'size',
-	'quotaBytesUsed',
+	'oldestCreatedTime',
+	'totalSize',
+	'totalQuotaBytesUsed',
 }
 
 def get_drive_service(client_secret_file: str | None = None, token_file: str | None = None):
@@ -212,8 +214,13 @@ def build_item_record(
 	created_time = item.get('createdTime', '')
 	oldest_date = created_time
 	
-	size = int(item.get('size', 0))
-	quota = int(item.get('quotaBytesUsed', 0))
+	# API準拠の生データを取得
+	raw_size = int(item.get('size', 0))
+	raw_quota = int(item.get('quotaBytesUsed', 0))
+	
+	# 独自集計用の初期値設定
+	total_size = raw_size
+	total_quota = raw_quota
 	
 	# フォルダで子孫集約が必要な場合、子孫要素を集約
 	if is_folder_item(item) and needs_descendant_agg and service:
@@ -222,21 +229,22 @@ def build_item_record(
 		)
 		if desc_oldest:
 			oldest_date = desc_oldest if not created_time or desc_oldest < created_time else created_time
-		size += desc_size
-		quota += desc_quota
+		total_size += desc_size
+		total_quota += desc_quota
 	
 	# レコードを構築
 	record = { }
 	for header in headers:
 		if header == 'owners':
 			record[header] = owner_name
-		elif header == 'oldestDescendantCreationTime':
+		elif header == 'oldestCreatedTime':
 			record[header] = oldest_date
-		elif header == 'size':
-			record[header] = size
-		elif header == 'quotaBytesUsed':
-			record[header] = quota
+		elif header == 'totalSize':
+			record[header] = total_size
+		elif header == 'totalQuotaBytesUsed':
+			record[header] = total_quota
 		else:
+			# size や quotaBytesUsed はここを通り、APIが返した値そのまま（あるいは空文字）が設定される
 			record[header] = item.get(header, '')
 	
 	return record
@@ -304,7 +312,7 @@ def list_drive_folder(
 	
 	root_api_fields, desc_api_fields = get_required_api_fields(_fields)
 	needs_descendant_agg = any(
-		h in _fields for h in ('oldestDescendantCreationTime', 'size', 'quotaBytesUsed')
+		h in _fields for h in ('oldestCreatedTime', 'totalSize', 'totalQuotaBytesUsed')
 	)
 	
 	logger = logging.getLogger('GoogleDriveLister')
