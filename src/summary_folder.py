@@ -172,11 +172,13 @@ def aggregate_descendants(
 	total_quota = 0
 	
 	descendants_generator = iter_descendants(service, folder_id, desc_api_fields, include_trashed)
-	descendant_iter = tqdm(descendants_generator, desc="Processing descendant items", unit=" item", position=1, leave=False, disable=quiet)
+	descendant_iter = tqdm(
+		descendants_generator, desc="Processing descendant items", unit=" item", position=1, leave=False, disable=quiet, file=sys.stderr
+	)
 	
 	for desc in descendant_iter:
-		desc_size = int(desc.get('size', 0))
-		desc_quota = int(desc.get('quotaBytesUsed', 0))
+		desc_size = int(desc.get('size') or 0)
+		desc_quota = int(desc.get('quotaBytesUsed') or 0)
 		desc_created = desc.get('createdTime', '')
 		
 		total_size += desc_size
@@ -215,8 +217,8 @@ def build_item_record(
 	oldest_date = created_time
 	
 	# API準拠の生データを取得
-	raw_size = int(item.get('size', 0))
-	raw_quota = int(item.get('quotaBytesUsed', 0))
+	raw_size = int(item.get('size') or 0)
+	raw_quota = int(item.get('quotaBytesUsed') or 0)
 	
 	# 独自集計用の初期値設定
 	total_size = raw_size
@@ -244,7 +246,7 @@ def build_item_record(
 		elif header == 'totalQuotaBytesUsed':
 			record[header] = total_quota
 		else:
-			# size や quotaBytesUsed はここを通り、APIが返した値そのまま（あるいは空文字）が設定される
+			# APIが返した値をそのまま設定する
 			record[header] = item.get(header, '')
 	
 	return record
@@ -255,30 +257,30 @@ def write_records_to_tsv(
 		output: Path | None,
 		append: bool = False
 ) -> None:
-	"""レコードをTSVファイルまたは標準出力に書き込む
+	"""レコードを標準出力に書き込みつつ、指定があればTSVファイルにも書き込む
 
 	出力先が指定されていない場合は標準出力に書き出し、後続のパイプ処理などを可能にする。
 
 	Args:
 		records: 書き込むレコード一覧
 		headers: ヘッダー一覧
-		output: 出力ファイルパス。None の場合は標準出力を使用する
-		append: 追記モード
+		output: 出力ファイルパス。None の場合は標準出力のみ
+		append: 追記モード（ファイル出力時のみ影響）
 	"""
+	# 常に標準出力に書き出す
+	stdout_writer = csv.DictWriter(sys.stdout, fieldnames=headers, delimiter='\t')
+	stdout_writer.writeheader()
+	stdout_writer.writerows(records)
+	
+	# 出力ファイルが指定されている場合は、ファイルにも書き出す
 	if output:
 		write_mode = 'a+' if append else 'w'
-		f = open(str(output), write_mode, encoding='utf-8', newline='')
-	else:
-		f = sys.stdout
-	
-	try:
-		writer = csv.DictWriter(f, fieldnames=headers, delimiter='\t')
-		if not output or not append:
-			writer.writeheader()
-		writer.writerows(records)
-	finally:
-		if output:
-			f.close()
+		with open(str(output), write_mode, encoding='utf-8', newline='') as f:
+			file_writer = csv.DictWriter(f, fieldnames=headers, delimiter='\t')
+			# 追記モードでない場合のみヘッダーを書き込む
+			if not append:
+				file_writer.writeheader()
+			file_writer.writerows(records)
 
 def list_drive_folder(
 		service,
@@ -354,7 +356,9 @@ def list_drive_folder(
 	
 	# アイテムを処理
 	all_records = []
-	root_iter = tqdm(root_children, desc="Processing root items", unit=" item", position=0, disable=quiet)
+	root_iter = tqdm(
+		root_children, desc="Processing root items", unit=" item", position=0, disable=quiet, file=sys.stderr
+	)
 	
 	for child in root_iter:
 		record = build_item_record(
