@@ -2,15 +2,15 @@ import os
 from pathlib import Path
 import platform
 
-APP_NAME = "GoogleDriveLister"
+APP_NAME = "GDLS"
 
 def get_app_data_dir():
 	"""OS別のアプリデータディレクトリを取得
 	
 	Returns:
 		アプリケーションデータディレクトリのパス
-		- Windows: %APPDATA%\SnowyTools\<APP_NAME>
-		- macOS/Linux: ~/.config/SnowyTools/<APP_NAME>
+		- Windows: %APPDATA%\SnowyTools\GDLS
+		- macOS/Linux: ~/.config/SnowyTools/GDLS
 	"""
 	system = platform.system()
 	if system == "Windows":
@@ -46,7 +46,7 @@ def get_client_secret_file(cli_arg: str | None = None) -> Path:
 	
 	優先順序:
 	1. CLI引数が指定されている場合
-	2. 環境変数 SNOWY_GDL_CLIENT_SECRET_FILE
+	2. 環境変数 GDLS_CLIENT_SECRET_FILE
 	3. デフォルトパス
 	
 	Args:
@@ -55,14 +55,14 @@ def get_client_secret_file(cli_arg: str | None = None) -> Path:
 	Returns:
 		client_secret.json のパス
 	"""
-	return get_file_path("SNOWY_GDL_CLIENT_SECRET_FILE", "client_secret.json", cli_arg)
+	return get_file_path("GDLS_CLIENT_SECRET_FILE", "client_secret.json", cli_arg)
 
 def get_token_file(cli_arg: str | None = None) -> Path:
 	"""token.json のパスを取得
 	
 	優先順序:
 	1. CLI引数が指定されている場合
-	2. 環境変数 SNOWY_GDL_TOKEN_FILE
+	2. 環境変数 GDLS_TOKEN_FILE
 	3. デフォルトパス
 	
 	Args:
@@ -71,7 +71,7 @@ def get_token_file(cli_arg: str | None = None) -> Path:
 	Returns:
 		token.json のパス
 	"""
-	return get_file_path("SNOWY_GDL_TOKEN_FILE", "token.json", cli_arg)
+	return get_file_path("GDLS_TOKEN_FILE", "token.json", cli_arg)
 
 # 後方互換性のため、デフォルト値を設定
 CLIENT_SECRET_FILE = get_client_secret_file()

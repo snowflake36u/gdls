@@ -1,4 +1,4 @@
-# GoogleDriveLister
+# GDLS: Google Drive List
 
 Google Drive のフォルダ構造を TSV ファイルにエクスポートするツールです。フォルダのサイズ、更新日時、所有者情報などを一覧化できます。
 
@@ -31,8 +31,8 @@ pip install -r requirements.txt
 3. **OAuth 2.0 認証情報**（デスクトップアプリケーション）を作成し、`client_secret.json` をダウンロードします。
 4. ダウンロードしたファイルを、お使いのOSに合わせて以下のディレクトリに配置してください（ディレクトリが存在しない場合は手動で作成してください）。
 
-- **Windows**: `%APPDATA%\SnowyTools\GoogleDriveLister\client_secret.json`
-- **macOS/Linux**: `~/.config/SnowyTools/GoogleDriveLister/client_secret.json`
+- **Windows**: `%APPDATA%\SnowyTools\GDLS\client_secret.json`
+- **macOS/Linux**: `~/.config/SnowyTools/GDLS/client_secret.json`
 
 ※ 初回実行時に認証が完了すると、上記と同じディレクトリに `token.json` が自動生成されます。
 
@@ -81,14 +81,14 @@ python summary_folder.py https://drive.google.com/drive/folders/<YOUR_FOLDER_ID>
 
 **Windows PowerShell:**
 ```powershell
-$env:SNOWY_GDL_CLIENT_SECRET_FILE="C:\custom\path\client_secret.json"
-$env:SNOWY_GDL_TOKEN_FILE="C:\custom\path\token.json"
+$env:GDLS_CLIENT_SECRET_FILE="C:\custom\path\client_secret.json"
+$env:GDLS_TOKEN_FILE="C:\custom\path\token.json"
 ```
 
 **macOS/Linux:**
 ```bash
-export SNOWY_GDL_CLIENT_SECRET_FILE="/custom/path/client_secret.json"
-export SNOWY_GDL_TOKEN_FILE="/custom/path/token.json"
+export GDLS_CLIENT_SECRET_FILE="/custom/path/client_secret.json"
+export GDLS_TOKEN_FILE="/custom/path/token.json"
 ```
 
 ## トラブルシューティング
@@ -96,14 +96,14 @@ export SNOWY_GDL_TOKEN_FILE="/custom/path/token.json"
 ### "Client Secret file not found" エラー
 `client_secret.json` が正しい場所に配置されているか確認してください。
 
-- **Windows**: `Get-Item -Path "$env:APPDATA\SnowyTools\GoogleDriveLister\client_secret.json"`
-- **macOS/Linux**: `ls -la ~/.config/SnowyTools/GoogleDriveLister/`
+- **Windows**: `Get-Item -Path "$env:APPDATA\SnowyTools\GDLS\client_secret.json"`
+- **macOS/Linux**: `ls -la ~/.config/SnowyTools/GDLS/`
 
 ### 認証に失敗する場合
 Google Cloud Console の OAuth 同意画面の設定を確認した上で、既存の `token.json` を削除し、初回認証からやり直してください。
 
-- **Windows**: `Remove-Item "$env:APPDATA\SnowyTools\GoogleDriveLister\token.json"`
-- **macOS/Linux**: `rm ~/.config/SnowyTools/GoogleDriveLister/token.json`
+- **Windows**: `Remove-Item "$env:APPDATA\SnowyTools\GDLS\token.json"`
+- **macOS/Linux**: `rm ~/.config/SnowyTools/GDLS/token.json`
 
 ## ライセンス
 
