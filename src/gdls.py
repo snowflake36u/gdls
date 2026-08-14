@@ -38,7 +38,7 @@ LONG_OUTPUT_HEADERS = [
 
 # 出力属性と必要なAPIフィールドの対応マッピング
 HEADER_API_DEPENDENCIES: dict[str, list[str]] = {
-	'oldestCreatedTime': ['createdTime'],  # 自分自身および子孫アイテムのうち最古の作成日時
+	'oldestCreatedTime': ['createdTime'],
 	'totalSize': ['size'],
 	'totalQuotaBytesUsed': ['quotaBytesUsed'],
 	'relativePath': ['name'],
@@ -46,8 +46,8 @@ HEADER_API_DEPENDENCIES: dict[str, list[str]] = {
 }
 
 # 子孫要素の取得・集約が必要な属性一覧
-DESCENDANT_AGGREGATED_HEADERS: set[str] = {
-	'oldestCreatedTime',
+AGGREGATIVE_FIELDS: set[str] = {
+	'oldestCreatedTime',  # 自分自身および子孫アイテムのうち最古の作成日時
 	'totalSize',
 	'totalQuotaBytesUsed',
 }
@@ -137,7 +137,7 @@ def get_required_api_fields(
 		
 		root_field_set.update(dependencies)
 		
-		if header in DESCENDANT_AGGREGATED_HEADERS:
+		if header in AGGREGATIVE_FIELDS:
 			descendant_field_set.update(dependencies)
 	
 	return list(root_field_set), list(descendant_field_set)
@@ -184,31 +184,68 @@ def fetch_children(
 	
 	return children
 
-def fetch_all_items_recursive(
+def propagate_to_parent(
+		item_record, parent_record, output_headers
+):
+	if 'oldestCreatedTime' in output_headers:
+		item_oldest = item_record['oldestCreatedTime']
+		parent_oldest = parent_record['oldestCreatedTime']
+		
+		# 最古作成日時の更新（文字列の辞書順比較によって判別）
+		if item_oldest and (
+				not parent_oldest or item_oldest < parent_oldest
+		):
+			parent_record['oldestCreatedTime'] = item_oldest
+	
+	if 'totalSize' in output_headers:
+		parent_record['totalSize'] += item_record['totalSize']
+	
+	if 'totalQuotaBytesUsed' in output_headers:
+		parent_record['totalQuotaBytesUsed'] += item_record['totalQuotaBytesUsed']
+
+def fetch_records_recursively(
 		service: Resource,
 		root_folder_id: str,
 		api_fields: list[str],
+		output_headers: list[str],
 		include_trashed: bool = False,
 		quiet: bool = False,
+		root_item: dict | None = None,
+		needs_descendant_agg: bool = True,
 ) -> tuple[list[dict], list[dict]]:
-	"""指定フォルダ配下のすべての要素を反復処理で全件取得する。
+	"""指定フォルダ配下のすべての要素を反復処理で全件取得し、
+	データの集約とレコード構築を行う。
+
+	関数呼び出しのオーバーヘッド削減と、深くネストされたディレクトリ構造での
+	再帰呼び出し上限（RecursionError）を回避するため、内部的にスタック構造を
+	用いた深さ優先探索（DFS）アルゴリズムを採用している。
 
 	Args:
 		service: Google Drive APIサービス。
 		root_folder_id: 起点フォルダID。
 		api_fields: APIから取得するフィールド。
+		output_headers: 出力対象のヘッダー。
 		include_trashed: ゴミ箱内の要素を含めるかどうか。
 		quiet: 進捗表示を抑制するかどうか。
+		root_item: 集約対象に起点アイテム自身を含める場合のアイテム。
+		needs_descendant_agg: 子孫集約値を計算するかどうか。
 
 	Returns:
-		配下の全アイテムのリストと、直下アイテムのリストのタプル。基点フォルダは含まれない。
+		構築済みレコードのリストと、直下アイテムのレコードのリストのタプル。
 	"""
-	results = []
+	if root_item is None:
+		root_children = fetch_children(
+			service, root_folder_id, api_fields, include_trashed,
+		)
+	else:
+		root_children = [root_item]
 	
-	# 進捗の全体量を確定させるため、起点となる直下のアイテムを先に取得する。
-	root_children = fetch_children(
-		service, root_folder_id, api_fields, include_trashed,
-	)
+	records = []
+	root_records = []
+	
+	# 集計処理のために、IDベースでレコードや親子関係を参照する辞書
+	records_by_id = { }
+	parent_ids: dict[str, str | None] = { }
 	
 	with tqdm(
 			root_children,
@@ -219,136 +256,110 @@ def fetch_all_items_recursive(
 			file=sys.stderr,
 	) as progress:
 		for child in progress:
-			child_name = child.get('name', '')
-			
-			# APIに存在しない内部属性として親IDを保持する。
-			# 集約処理で取得済みの親子関係を再利用するために使用する。
-			child['_parentId'] = root_folder_id
-			child['_relativePath'] = child_name
-			child['_depth'] = 1
-			
-			results.append(child)
-			
-			# 現在のトップレベル子配下で発見した孫以下のアイテム数。
 			descendant_count = 0
-			
-			# 次回の表示更新時刻。時間基準と件数基準を併用して、
-			# 大量処理時の表示更新回数を抑制する。
 			last_progress_update = time.monotonic()
 			next_progress_update_count = RECURSIVE_PROGRESS_UPDATE_ITEMS
 			
-			if is_folder_item(child):
-				# (フォルダID, 親からの相対パス, 深さ)
-				stack = [(child['id'], child_name, 1)]
+			# 直下アイテムのレコードを作成する
+			child_name = child.get('name', '')
+			child_id = child['id']
+			child_parent_id = None if root_item is not None else root_folder_id
+			child_depth = 0 if root_item is not None else 1
+			
+			record = create_item_record(
+				child, output_headers,
+				relative_path=child_name, depth=child_depth,
+			)
+			records.append(record)
+			records_by_id[child_id] = record
+			root_records.append(record)
+			parent_ids[child_id] = child_parent_id
+			
+			if not is_folder_item(child):
+				progress.set_postfix_str(
+					"descendants=0", refresh=False,
+				)
+				continue
+			
+			# === フォルダの場合は子孫要素を再帰的に探索する ===
+			
+			# 反復的な深さ優先探索のためのスタック構造。
+			# 要素のタプル: (要素ID, 親パス, 階層の深さ, 帰りがけフラグ)
+			# 帰りがけフラグ(finalize)がTrueの場合、子孫の探索が完了した後の集約処理を行う。
+			stack = [(child_id, child_name, child_depth, False)]
+			
+			while stack:
+				current_id, parent_path, depth, finalize = stack.pop()
 				
-				while stack:
-					current_id, parent_path, depth = stack.pop()
+				if finalize:
+					# =====
+					# 帰りがけの集計伝播処理（子孫の走査が完了した後に実行される）
+					# 自身のレコードを補完し、親に情報を伝播する。
+					# =====
+					parent_id = parent_ids[current_id]
+					if parent_id and parent_id in records_by_id:
+						propagate_to_parent(
+							records_by_id[current_id],
+							records_by_id[parent_id],
+							output_headers,
+						)
+					continue
+				
+				# =====
+				# 行きがけの処理
+				# 対象フォルダ内のアイテムを取得し、スタックに追加する。
+				# =====
+				descendants = fetch_children(
+					service, current_id, api_fields, include_trashed,
+				)
+				
+				if needs_descendant_agg:
+					# 自身についての帰りがけ処理（finalize=True）をスタックに積む。
+					# LIFO(後入れ先出し)のため、これから積まれる子ノードの処理が全て終わった後に実行される。
+					stack.append((current_id, parent_path, depth, True))
+				
+				# 子ノードをスタックに積む。
+				# reversed() を使用することで、APIから取得した順序（元の配列順）でスタックから取り出せるようにする。
+				desc_depth = depth + 1
+				for desc in reversed(descendants):
+					desc_name = desc.get('name', '')
+					relative_path = f'{parent_path}/{desc_name}' if parent_path else desc_name
 					
-					descendants = fetch_children(
-						service, current_id, api_fields, include_trashed,
+					record = create_item_record(
+						desc, output_headers,
+						relative_path=relative_path, depth=desc_depth,
 					)
+					records.append(record)
+					records_by_id[desc['id']] = record
+					parent_ids[desc['id']] = current_id
 					
-					for desc in descendants:
-						desc_name = desc.get('name', '')
-						relative_path = f'{parent_path}/{desc_name}' if parent_path \
-							else desc_name
+					if is_folder_item(desc):
+						# 子アイテムがフォルダの場合は、さらにその内部を走査するためスタックに積む（行きがけ処理）
+						stack.append((desc['id'], relative_path, desc_depth, False))
+					elif needs_descendant_agg:
+						# 子アイテムがファイルで、集約が必要な場合は、自身の情報を親へ伝播させるため帰りがけ処理のみ積む
+						stack.append((desc['id'], relative_path, desc_depth, True))
+					
+					# === 進捗更新 ===
+					descendant_count += 1
+					current_time = time.monotonic()
+					# 画面のちらつきや描画負荷を防ぐため、一定時間または一定件数ごとのみ進捗を描画する。
+					if descendant_count >= next_progress_update_count \
+							or current_time - last_progress_update >= RECURSIVE_PROGRESS_UPDATE_INTERVAL:
+						progress.set_postfix_str(
+							f"descendants={descendant_count:,}", refresh=False,
+						)
+						last_progress_update = current_time
 						
-						desc['_parentId'] = current_id
-						desc['_relativePath'] = relative_path
-						desc['_depth'] = depth + 1
-						
-						results.append(desc)
-						descendant_count += 1
-						
-						if is_folder_item(desc):
-							stack.append((desc['id'], relative_path, depth + 1))
-						
-						current_time = time.monotonic()
-						if descendant_count >= next_progress_update_count \
-								or current_time - last_progress_update >= RECURSIVE_PROGRESS_UPDATE_INTERVAL:
-							progress.set_postfix_str(
-								f'descendants={descendant_count:,}',
-								refresh=False,
-							)
-							last_progress_update = current_time
-							
-							while descendant_count >= next_progress_update_count:
-								next_progress_update_count += RECURSIVE_PROGRESS_UPDATE_ITEMS
+						while descendant_count >= next_progress_update_count:
+							next_progress_update_count += RECURSIVE_PROGRESS_UPDATE_ITEMS
 			
 			# 現在のトップレベル子の探索完了時には必ず最新値を表示する。
 			progress.set_postfix_str(
-				f'descendants={descendant_count:,}',
-				refresh=False,
+				f'descendants={descendant_count:,}', refresh=False,
 			)
 	
-	return results, root_children
-
-def aggregate_recursive_items(
-		items: list[dict],
-		quiet: bool = False,
-) -> None:
-	"""再帰取得済みアイテムからフォルダの集約値を一括計算する。
-
-	Args:
-		items: 再帰取得済みのアイテム一覧。
-			任意のアイテムに対して子孫アイテムが後方に位置している必要がある。
-		quiet: 進捗表示を抑制するかどうか。
-	"""
-	if not items:
-		return
-	
-	aggregates: dict[str, dict[str, object]] = { }
-	
-	for item in items:
-		item_id = item['id']
-		
-		# 加算時のキャスト負荷を下げるため、初期化時に数値化しておく
-		aggregates[item_id] = {
-			'oldest': item.get('createdTime', ''),
-			'size': int(item.get('size') or 0),
-			'quota': int(item.get('quotaBytesUsed') or 0),
-		}
-	
-	# アイテムを深い順に処理することで、子フォルダの集約値を親フォルダへ一度だけ伝播させる。
-	# 取得元での探索順序の性質上、リスト内では親要素が必ず子要素より前に配置されている。
-	# そのため、リストを逆順に処理するだけで末端（子）から親への伝播が実現できる。
-	with tqdm(
-			reversed(items),
-			desc="Aggregating recursive items",
-			unit=" item",
-			position=0,
-			disable=quiet,
-			file=sys.stderr,
-	) as progress:
-		for item in progress:
-			parent_id = item.get('_parentId')
-			
-			if not parent_id:
-				continue
-			
-			item_aggregate = aggregates[item['id']]
-			parent_aggregate = aggregates.get(parent_id)
-			
-			if parent_aggregate is None:
-				continue
-			
-			item_oldest = item_aggregate['oldest']
-			parent_oldest = parent_aggregate['oldest']
-			
-			if item_oldest and (
-					not parent_oldest or item_oldest < parent_oldest
-			):
-				parent_aggregate['oldest'] = item_oldest
-			
-			parent_aggregate['size'] += item_aggregate['size']
-			parent_aggregate['quota'] += item_aggregate['quota']
-	
-	for item in items:
-		aggregate = aggregates[item['id']]
-		
-		item['_oldestCreatedTime'] = aggregate['oldest']
-		item['_totalSize'] = aggregate['size']
-		item['_totalQuotaBytesUsed'] = aggregate['quota']
+	return records, root_records
 
 def get_owner_name(item: dict) -> str:
 	"""アイテムからオーナー名を取得する。
@@ -377,20 +388,24 @@ def is_folder_item(item: dict) -> bool:
 	"""
 	return item.get('mimeType') == FOLDER_MIME_TYPE
 
-def build_item_record(
+def create_item_record(
 		item: dict,
 		headers: list[str],
+		relative_path: str | None = None,
+		depth: int = 0,
 ) -> dict:
 	"""フォルダアイテムのレコードを構築する。
 
 	指定された出力ヘッダーに基づき、APIレスポンスから必要な属性を抽出・整形する。
 
 	Args:
-		item: APIから取得したアイテム（必要な集約値は付与済みであること）。
+		item: APIから取得したアイテム。
 		headers: 出力対象のヘッダー一覧。
+		relative_path: アイテムのルートからの相対パス。
+		depth: アイテムの階層深度。
 
 	Returns:
-		構築されたレコード辞書。
+		構築されたレコード辞書。集約対象の値は探索完了時に更新される。
 	"""
 	owner_name = get_owner_name(item)
 	
@@ -400,16 +415,18 @@ def build_item_record(
 		if header == 'owners':
 			record[header] = owner_name
 		elif header == 'oldestCreatedTime':
-			# 集約値があればそれを使用、なければ自身のcreatedTime
-			record[header] = item.get('_oldestCreatedTime', item.get('createdTime', ''))
+			# 初期値は自身の作成日時とし、探索完了後に子孫を含む集約値へ更新する。
+			record[header] = item.get('createdTime', '')
 		elif header == 'totalSize':
-			record[header] = item.get('_totalSize', int(item.get('size') or 0))
+			# 初期値は自身のサイズとし、探索完了後に子孫を含む集約値へ更新する。
+			record[header] = int(item.get('size') or 0)
 		elif header == 'totalQuotaBytesUsed':
-			record[header] = item.get('_totalQuotaBytesUsed', int(item.get('quotaBytesUsed') or 0))
+			# 初期値は自身の使用量とし、探索完了後に子孫を含む集約値へ更新する。
+			record[header] = int(item.get('quotaBytesUsed') or 0)
 		elif header == 'relativePath':
-			record[header] = item.get('_relativePath', item.get('name', ''))
+			record[header] = item.get('name', '') if relative_path is None else relative_path
 		elif header == 'depth':
-			record[header] = item.get('_depth', 0)
+			record[header] = depth
 		elif header == 'parents':
 			# API仕様上、親IDのリストとして返却されるため直接カンマ区切りで結合する。
 			record[header] = ','.join(item.get('parents', []))
@@ -471,8 +488,8 @@ def write_records_to_tsv(
 	
 	write_mode = 'a' if append else 'w'
 	
-	with open(output, write_mode, encoding='utf-8', newline='') as file:
-		file_writer = csv.DictWriter(file, fieldnames=headers, delimiter='\t')
+	with open(output, write_mode, encoding='utf-8', newline='') as f:
+		file_writer = csv.DictWriter(f, fieldnames=headers, delimiter='\t')
 		
 		# 追記対象が存在しない、または空ファイルの場合は
 		# 新しいTSVとしてヘッダーを書き出す。
@@ -625,9 +642,9 @@ def list_drive_folder(
 		item_mode: bool = False,
 		describe_mode: bool = False,
 		recursive_mode: bool = False,
+		output: str | None = None,
 		output_format: str = 'tsv',
 		no_header: bool = False,
-		output: str | None = None,
 		append_mode: bool = False,
 		quiet: bool = False,
 ) -> None:
@@ -637,7 +654,7 @@ def list_drive_folder(
 		service: Google Drive APIサービス。
 		target_folder_id: 対象フォルダID。
 		fields: 出力対象のヘッダー。
-		include_trashed: ゴミ箱内のファイルを含めるかどうか。
+		include_trashed: ゴミ箱内のアイテムを含めるかどうか。
 		item_mode: 対象アイテム自身のみを出力するかどうか。
 		describe_mode: 対象アイテムを詳細表示するかどうか。
 		recursive_mode: 子孫要素まで再帰的に取得するかどうか。
@@ -662,12 +679,15 @@ def list_drive_folder(
 	# APIに問い合わせる属性を決定する
 	root_api_fields, descendant_api_fields = get_required_api_fields(output_headers)
 	needs_descendant_agg = any(
-		header in DESCENDANT_AGGREGATED_HEADERS for header in output_headers
+		header in AGGREGATIVE_FIELDS for header in output_headers
 	)
 	is_single_item_mode = item_mode or describe_mode
 	
 	logger = logging.getLogger(APP_NAME)
 	logger.info("Fetching data from Google Drive...")
+	
+	# ファイルや標準出力へ最終的に書き出す対象のレコードリスト
+	# records_to_output: list = []
 	
 	if is_single_item_mode:
 		# 対象アイテムそのものを1つだけ取得する。
@@ -677,39 +697,41 @@ def list_drive_folder(
 			supportsAllDrives=True,
 		).execute()
 		
-		item['_relativePath'] = item.get('name', '')
-		item['_depth'] = 0
-		
-		# 対象アイテムがフォルダかつ集約が必要な場合は事前に集約を済ませる
 		if needs_descendant_agg and is_folder_item(item):
-			descendants, _ = fetch_all_items_recursive(
+			# 単一アイテムの集約値を計算するため内部的に子孫を走査するが、出力はルート（対象自身）のみ。
+			_, root_records = fetch_records_recursively(
 				service,
 				item['id'],
 				descendant_api_fields,
+				output_headers,
 				include_trashed,
 				quiet=quiet,
+				root_item=item,
 			)
-			if descendants:
-				# 親である対象アイテム自体もリストに含めることで、子孫の集計値がitemに伝播・付与される
-				aggregate_recursive_items([item, *descendants], quiet=quiet)
-		
-		root_items = [item]
+			records_to_output = root_records
+		else:
+			records_to_output = [
+				create_item_record(
+					item, output_headers,
+					relative_path=item.get('name', ''), depth=0,
+				)
+			]
 	
 	elif recursive_mode or needs_descendant_agg:
-		# 再帰取得が必要な場合は全アイテムを一度だけ取得する。
-		all_items, root_items = fetch_all_items_recursive(
+		# 再帰探索、集約、レコード構築を同じ走査で実行する。
+		# recursive_modeがFalseの場合でも、集約値計算のために子孫を取得するが、
+		# その場合の最終的な出力対象は直下アイテム（root_records）のみに絞り込む。
+		all_records, root_records = fetch_records_recursively(
 			service,
 			target_folder_id,
 			root_api_fields,
+			output_headers,
 			include_trashed,
 			quiet=quiet,
+			needs_descendant_agg=needs_descendant_agg,
 		)
 		
-		if needs_descendant_agg:
-			aggregate_recursive_items(all_items, quiet=quiet)
-		
-		if recursive_mode:
-			root_items = all_items
+		records_to_output = all_records if recursive_mode else root_records
 	
 	else:
 		# 集約が不要な場合は、指定フォルダの直下要素だけを取得する。
@@ -717,12 +739,16 @@ def list_drive_folder(
 			service, target_folder_id, root_api_fields, include_trashed,
 		)
 		
-		for child in root_items:
-			child['_relativePath'] = child.get('name', '')
-			child['_depth'] = 1
+		records_to_output = [
+			create_item_record(
+				child, output_headers,
+				relative_path=child.get('name', ''), depth=1,
+			)
+			for child in root_items
+		]
 	
 	# 直下要素が0件だった場合、対象ID自体が非フォルダである可能性がある。
-	if not is_single_item_mode and not root_items:
+	if not is_single_item_mode and not records_to_output:
 		target_info = service.files().get(
 			fileId=target_folder_id,
 			fields='mimeType',
@@ -733,25 +759,10 @@ def list_drive_folder(
 			logger.warning(f"Warning: Specified ID '{target_folder_id}' is not a folder.")
 			logger.warning("If you want to fetch information for this file itself, please use the '--item' option.")
 	
-	# アイテムを処理
-	all_records = []
-	
-	with tqdm(
-			root_items,
-			desc="Completing items",
-			unit=" item",
-			position=0,
-			disable=quiet,
-			file=sys.stderr,
-	) as progress:
-		for child in progress:
-			record = build_item_record(child, output_headers)
-			all_records.append(record)
-	
 	if describe_mode:
-		if all_records:
+		if records_to_output:
 			print_describe_info(
-				all_records[0],
+				records_to_output[0],
 				output_path,
 				use_json=(output_format == 'json'),
 				append=append_mode,
@@ -759,21 +770,21 @@ def list_drive_folder(
 	
 	elif output_format == 'json':
 		write_records_to_json(
-			records=all_records,
+			records=records_to_output,
 			output=output_path,
 			append=append_mode,
 		)
 	
 	else:
 		write_records_to_tsv(
-			records=all_records,
+			records=records_to_output,
 			headers=output_headers,
 			output=output_path,
 			append=append_mode,
 			no_header=no_header,
 		)
 	
-	logger.info(f"Items: {len(all_records)}")
+	logger.info(f"Items: {len(records_to_output)}")
 	if output_path:
 		logger.info(f"Output to: {output_path}")
 
