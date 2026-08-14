@@ -749,15 +749,22 @@ def list_drive_folder(
 	
 	# 直下要素が0件だった場合、対象ID自体が非フォルダである可能性がある。
 	if not is_single_item_mode and not records_to_output:
+		# 対象が非フォルダであった場合に自身のレコードを構築するため、必要なフィールドを網羅して取得する
+		all_required_fields = list(set(root_api_fields + descendant_api_fields))
 		target_info = service.files().get(
 			fileId=target_folder_id,
-			fields='mimeType',
+			fields=', '.join(all_required_fields),
 			supportsAllDrives=True,
 		).execute()
 		
-		if target_info.get('mimeType') != FOLDER_MIME_TYPE:
-			logger.warning(f"Warning: Specified ID '{target_folder_id}' is not a folder.")
-			logger.warning("If you want to fetch information for this file itself, please use the '--item' option.")
+		if not is_folder_item(target_info):
+			# フォルダでない場合は、Linuxのlsコマンドの慣習に合わせて対象アイテム自身を出力結果とする
+			records_to_output = [
+				create_item_record(
+					target_info, output_headers,
+					relative_path=target_info.get('name', ''), depth=0,
+				)
+			]
 	
 	if describe_mode:
 		if records_to_output:
