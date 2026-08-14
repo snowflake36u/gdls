@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import sys
+import time
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -50,6 +51,14 @@ DESCENDANT_AGGREGATED_HEADERS: set[str] = {
 	'totalSize',
 	'totalQuotaBytesUsed',
 }
+
+# 再帰探索の進捗バー更新間隔。
+# tqdmの表示更新自体による負荷を抑えつつ、長時間停止して見えることを防ぐ。
+RECURSIVE_PROGRESS_UPDATE_INTERVAL = 0.2
+
+# 再帰探索の進捗バーを件数基準でも更新する間隔。
+# 短時間に大量のアイテムが処理された場合でも表示を適度に追従させる。
+RECURSIVE_PROGRESS_UPDATE_ITEMS = 1000
 
 def get_drive_service(
 		client_secret_file: str | None = None,
@@ -220,6 +229,14 @@ def fetch_all_items_recursive(
 			
 			results.append(child)
 			
+			# 現在のトップレベル子配下で発見した孫以下のアイテム数。
+			descendant_count = 0
+			
+			# 次回の表示更新時刻。時間基準と件数基準を併用して、
+			# 大量処理時の表示更新回数を抑制する。
+			last_progress_update = time.monotonic()
+			next_progress_update_count = RECURSIVE_PROGRESS_UPDATE_ITEMS
+			
 			if is_folder_item(child):
 				# (フォルダID, 親からの相対パス, 深さ)
 				stack = [(child['id'], child_name, 1)]
@@ -241,9 +258,28 @@ def fetch_all_items_recursive(
 						desc['_depth'] = depth + 1
 						
 						results.append(desc)
+						descendant_count += 1
 						
 						if is_folder_item(desc):
 							stack.append((desc['id'], relative_path, depth + 1))
+						
+						current_time = time.monotonic()
+						if descendant_count >= next_progress_update_count \
+								or current_time - last_progress_update >= RECURSIVE_PROGRESS_UPDATE_INTERVAL:
+							progress.set_postfix_str(
+								f'descendants={descendant_count:,}',
+								refresh=False,
+							)
+							last_progress_update = current_time
+							
+							while descendant_count >= next_progress_update_count:
+								next_progress_update_count += RECURSIVE_PROGRESS_UPDATE_ITEMS
+			
+			# 現在のトップレベル子の探索完了時には必ず最新値を表示する。
+			progress.set_postfix_str(
+				f'descendants={descendant_count:,}',
+				refresh=False,
+			)
 	
 	return results, root_children
 
