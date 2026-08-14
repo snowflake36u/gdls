@@ -210,7 +210,6 @@ def fetch_records_recursively(
 		output_headers: list[str],
 		include_trashed: bool = False,
 		quiet: bool = False,
-		root_item: dict | None = None,
 		needs_descendant_agg: bool = True,
 ) -> tuple[list[dict], list[dict]]:
 	"""指定フォルダ配下のすべての要素を反復処理で全件取得し、
@@ -227,18 +226,14 @@ def fetch_records_recursively(
 		output_headers: 出力対象のヘッダー。
 		include_trashed: ゴミ箱内の要素を含めるかどうか。
 		quiet: 進捗表示を抑制するかどうか。
-		root_item: 集約対象に起点アイテム自身を含める場合のアイテム。
 		needs_descendant_agg: 子孫集約値を計算するかどうか。
 
 	Returns:
 		構築済みレコードのリストと、直下アイテムのレコードのリストのタプル。
 	"""
-	if root_item is None:
-		root_children = fetch_children(
-			service, root_folder_id, api_fields, include_trashed,
-		)
-	else:
-		root_children = [root_item]
+	root_children = fetch_children(
+		service, root_folder_id, api_fields, include_trashed,
+	)
 	
 	records = []
 	root_records = []
@@ -263,8 +258,7 @@ def fetch_records_recursively(
 			# 直下アイテムのレコードを作成する
 			child_name = child.get('name', '')
 			child_id = child['id']
-			child_parent_id = None if root_item is not None else root_folder_id
-			child_depth = 0 if root_item is not None else 1
+			child_depth = 1
 			
 			record = create_item_record(
 				child, output_headers,
@@ -273,7 +267,7 @@ def fetch_records_recursively(
 			records.append(record)
 			records_by_id[child_id] = record
 			root_records.append(record)
-			parent_ids[child_id] = child_parent_id
+			parent_ids[child_id] = root_folder_id
 			
 			if not is_folder_item(child):
 				progress.set_postfix_str(
@@ -686,9 +680,6 @@ def list_drive_folder(
 	logger = logging.getLogger(APP_NAME)
 	logger.info("Fetching data from Google Drive...")
 	
-	# ファイルや標準出力へ最終的に書き出す対象のレコードリスト
-	# records_to_output: list = []
-	
 	if is_single_item_mode:
 		# 対象アイテムそのものを1つだけ取得する。
 		item = service.files().get(
@@ -696,6 +687,12 @@ def list_drive_folder(
 			fields=', '.join(root_api_fields),
 			supportsAllDrives=True,
 		).execute()
+		
+		target_record = create_item_record(
+			item, output_headers,
+			relative_path=item.get('name', ''), depth=0,
+		)
+		records_to_output = [target_record]
 		
 		if needs_descendant_agg and is_folder_item(item):
 			# 単一アイテムの集約値を計算するため内部的に子孫を走査するが、出力はルート（対象自身）のみ。
@@ -706,16 +703,11 @@ def list_drive_folder(
 				output_headers,
 				include_trashed,
 				quiet=quiet,
-				root_item=item,
 			)
-			records_to_output = root_records
-		else:
-			records_to_output = [
-				create_item_record(
-					item, output_headers,
-					relative_path=item.get('name', ''), depth=0,
-				)
-			]
+			
+			# 直下アイテムの集約結果を対象アイテム自身のレコードへ合算する
+			for child_record in root_records:
+				propagate_to_parent(child_record, target_record, output_headers)
 	
 	elif recursive_mode or needs_descendant_agg:
 		# 再帰探索、集約、レコード構築を同じ走査で実行する。
