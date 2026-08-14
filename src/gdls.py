@@ -38,7 +38,7 @@ LONG_OUTPUT_HEADERS = [
 
 # 出力属性と必要なAPIフィールドの対応マッピング
 HEADER_API_DEPENDENCIES: dict[str, list[str]] = {
-	'oldestCreatedTime': ['createdTime'],
+	'oldestCreatedTime': ['createdTime'],  # 自分自身および子孫アイテムのうち最古の作成日時
 	'totalSize': ['size'],
 	'totalQuotaBytesUsed': ['quotaBytesUsed'],
 	'relativePath': ['name'],
@@ -317,7 +317,6 @@ def aggregate_recursive_items(
 			desc="Aggregating recursive items",
 			unit=" item",
 			position=0,
-			leave=False,
 			disable=quiet,
 			file=sys.stderr,
 	) as progress:
@@ -739,7 +738,7 @@ def list_drive_folder(
 	
 	with tqdm(
 			root_items,
-			desc="Analyzing items",
+			desc="Completing items",
 			unit=" item",
 			position=0,
 			disable=quiet,
