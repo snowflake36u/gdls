@@ -280,7 +280,7 @@ def aggregate_recursive_items(
 			reversed(items),
 			desc="Aggregating recursive items",
 			unit=" item",
-			position=1,
+			position=0,
 			leave=False,
 			disable=quiet,
 			file=sys.stderr,
@@ -703,7 +703,7 @@ def list_drive_folder(
 	
 	with tqdm(
 			root_items,
-			desc="Analyzing for root items",
+			desc="Analyzing items",
 			unit=" item",
 			position=0,
 			disable=quiet,
