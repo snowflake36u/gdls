@@ -55,6 +55,30 @@ AGGREGATIVE_FIELDS: set[str] = {
 	'totalQuotaBytesUsed',
 }
 
+# 数値として評価・ソートすべき非文字列属性および数値属性
+NUMERIC_FIELDS: set[str] = {
+	'size',
+	'quotaBytesUsed',
+	'version',
+	'depth',
+}
+
+# ブール値として評価・ソートすべき属性
+BOOLEAN_FIELDS: set[str] = {
+	'starred',
+	'trashed',
+	'explicitlyTrashed',
+	'isAppAuthorized',
+	'shared',
+	'ownedByMe',
+	'viewedByMe',
+	'modifiedByMe',
+	'hasThumbnail',
+	'writersCanShare',
+	'copyRequiresWriterPermission',
+	'hasAugmentedPermissions',
+}
+
 # 再帰探索の進捗バー更新間隔。
 # tqdmの表示更新自体による負荷を抑えつつ、長時間停止して見えることを防ぐ。
 RECURSIVE_PROGRESS_UPDATE_INTERVAL = 0.2
@@ -483,6 +507,78 @@ def create_item_record(
 	
 	return record
 
+def get_sort_value(key: str, val: object) -> tuple[int, object]:
+	"""型の異なる値や文字列形式の非文字列値を比較可能にするためのソートキーを生成する。
+
+	null値（Noneや空文字列）は特別に扱い、データを直接変更することなく
+	ソート時に最小の値として優先的に評価する。
+
+	Args:
+		key: 属性名。
+		val: セル値。
+
+	Returns:
+		ソート順序を安定させるためのタプル。
+	"""
+	if val is None or val == '':
+		return (0, '')
+	
+	if key in NUMERIC_FIELDS:
+		if isinstance(val, (int, float)):
+			return (1, val)
+		try:
+			return (1, int(val))
+		except ValueError:
+			try:
+				return (1, float(val))
+			except ValueError:
+				return (0, '')
+	
+	if key in BOOLEAN_FIELDS:
+		if isinstance(val, bool):
+			return (1, val)
+		if isinstance(val, str):
+			normalized = val.strip().lower()
+			if normalized == 'true':
+				return (1, True)
+			if normalized == 'false':
+				return (1, False)
+		return (1, bool(val))
+	
+	if isinstance(val, (int, float)):
+		return (1, val)
+	
+	return (2, str(val))
+
+def sort_records(records: list[dict], sort_arg: str) -> None:
+	"""指定されたキーに基づいてレコードリストをインプレースでソートする。
+
+	安定ソート（リストの元の順序を保持する特性）を利用し、
+	優先度の低いキーから順に適用することで複数キーによる並び替えを実現する。
+
+	Args:
+		records: ソート対象のレコードリスト。
+		sort_arg: カンマ区切りのソートキー（例: 'size desc, name'）。
+	"""
+	if not sort_arg:
+		return
+	
+	sort_keys = [k.strip() for k in sort_arg.split(',') if k.strip()]
+	for key_str in reversed(sort_keys):
+		is_desc = key_str.lower().endswith(' desc')
+		
+		if is_desc:
+			actual_key = key_str[:-5].strip()
+		elif key_str.lower().endswith(' asc'):
+			actual_key = key_str[:-4].strip()
+		else:
+			actual_key = key_str
+		
+		records.sort(
+			key=lambda r, k=actual_key: get_sort_value(k, r.get(k)),
+			reverse=is_desc,
+		)
+
 def format_cell_for_tsv(val: object) -> str:
 	"""TSVの各セル値を出力用文字列に変換する。
 
@@ -731,6 +827,7 @@ def list_drive_folder(
 		no_header: bool = False,
 		append_mode: bool = False,
 		quiet: bool = False,
+		sort_arg: str | None = None,
 ) -> None:
 	"""フォルダ内の情報を取得し、指定形式で出力する。
 
@@ -747,6 +844,7 @@ def list_drive_folder(
 		output: 出力ファイル名。
 		append_mode: 既存ファイルに追記するかどうか。
 		quiet: 進捗バーと非エラーログを抑制するかどうか。
+		sort_arg: カンマ区切りのソート指定文字列。
 
 	Raises:
 		Exception: Google Drive APIで取得に失敗した場合。
@@ -848,6 +946,10 @@ def list_drive_folder(
 				)
 			]
 	
+	if sort_arg and not is_single_item_mode:
+		sort_records(records_to_output, sort_arg)
+	
+	# === 結果を出力する ===
 	if describe_mode:
 		if records_to_output:
 			print_describe_info(
@@ -901,6 +1003,10 @@ def parse_arguments() -> argparse.Namespace:
 									help="Fetch and output information ONLY for the specified target file/folder itself")
 	item_group.add_argument('--describe', action='store_true',
 									help="Display detailed information for a single target item in a readable format")
+	
+	# 出力結果のソート
+	parser.add_argument('--sort', type=str,
+							  help="Comma-separated list of keys to sort the output by (e.g., 'size desc, name')")
 	
 	# 出力属性の指定
 	field_group = parser.add_mutually_exclusive_group()
@@ -1042,6 +1148,7 @@ def main() -> int:
 			output=args.output,
 			append_mode=args.append,
 			quiet=args.quiet,
+			sort_arg=args.sort,
 		)
 	except KeyboardInterrupt:
 		logging.error("Operation cancelled by user.")
