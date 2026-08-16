@@ -1,22 +1,30 @@
-# GDLS: Google Drive List
+# gdls: Google Drive List
 
-Google Drive のフォルダ構造を TSV ファイルにエクスポートするツールです。フォルダのサイズ、更新日時、所有者情報などを一覧化できます。
+Google Drive のフォルダ構造を `ls` コマンド風に一覧表示するコマンドラインツールです。
 
-## 主な機能
+ファイル・フォルダの名前やサイズ、更新日時、所有者などを一覧表示でき、TSV / JSON 形式での出力、再帰的な探索、共有ドライブ、集計情報の取得にも対応しています。
 
-- Google Drive フォルダの全階層をスキャン
-- ファイル/フォルダ情報をTSV形式で出力
-- サイズ・作成日時・更新日時などを自動集計（子孫要素を含む）
-- Google OAuth2 による安全な読み取り専用アクセス
+## Features
 
-## 必要要件
+* Google Drive のフォルダを階層的に探索
+* 通常のドライブおよび共有ドライブに対応
+* ファイル・フォルダの属性を自由に指定して出力
+* `--recursive` による再帰探索
+* フォルダ配下のサイズなどを集計する独自属性の提供
+* TSV / JSON 形式でのエクスポート
+* 出力結果のソート
+* ターミナルでの見やすい表形式・カラー表示
+* パイプライン処理を考慮した標準出力
+* Google OAuth 2.0 による読み取り専用アクセス
+* OAuth トークンの自動更新
 
-- Python 3.7 以上
-- Google Drive API アクセス権限
+## Requirements
 
-## 使い方
+* Python 3.10+
+* Google Drive API
+* `requirements.txt` に記載された依存パッケージ
 
-### 1. インストール
+## Installation
 
 ```bash
 git clone https://github.com/snowflake36u/google-drive-lister
@@ -24,87 +32,231 @@ cd google-drive-lister
 pip install -r requirements.txt
 ```
 
-### 2. Google API 認証情報の取得と配置
+## Authentication
 
-1. [Google Cloud Console](https://console.cloud.google.com/) にアクセスし、新しいプロジェクトを作成します。
-2. **Google Drive API** を有効化します。
-3. **OAuth 2.0 認証情報**（デスクトップアプリケーション）を作成し、`client_secret.json` をダウンロードします。
-4. ダウンロードしたファイルを、お使いのOSに合わせて以下のディレクトリに配置してください（ディレクトリが存在しない場合は手動で作成してください）。
+Google Drive API を利用するため、OAuth 2.0 の認証情報が必要です。
 
-- **Windows**: `%APPDATA%\SnowyTools\GDLS\client_secret.json`
-- **macOS/Linux**: `~/.config/SnowyTools/GDLS/client_secret.json`
+1. Google Cloud Console でプロジェクトを作成
+2. **Google Drive API** を有効化
+3. **OAuth 2.0 クライアント ID（デスクトップアプリ）**を作成
+4. `client_secret.json` をダウンロード
+5. 以下の場所に配置
 
-※ 初回実行時に認証が完了すると、上記と同じディレクトリに `token.json` が自動生成されます。
+| OS            | 配置先                                            |
+| ------------- | ---------------------------------------------- |
+| Windows       | `%APPDATA%\SnowyTools\GDLS\client_secret.json` |
+| macOS / Linux | `~/.config/SnowyTools/GDLS/client_secret.json` |
 
-### 3. 実行
+初回実行時にブラウザで Google アカウントの認証を行うと、同じディレクトリに `token.json` が自動生成されます。
 
-`<YOUR_FOLDER_ID>` を該当するドライブフォルダのIDで置き換えてください。
+認証ファイルの場所は `--client-secret` / `--token-file` オプションまたは対応する環境変数でも変更できます。
+
+## Usage
+
+### 基本
 
 ```bash
-cd src
-python summary_folder.py <YOUR_FOLDER_ID>"
+python gdls.py <FOLDER_ID>
 ```
 
-または
+指定したフォルダの**直下にあるアイテム**を一覧表示します。
+
+フォルダ ID のほか、Google Drive のフォルダ URL やファイルプレビュー URLも指定できます。
 
 ```bash
-cd src
-python summary_folder.py https://drive.google.com/drive/folders/<YOUR_FOLDER_ID>"
+python gdls.py 1ABC123xyzABC123xyzABC123xyz
+python gdls.py https://drive.google.com/drive/folders/1ABC123xyzABC123xyzABC123xyz
+python gdls.py root
+python gdls.py /
 ```
 
-※ 実行したディレクトリに `drive_contents.tsv` という名前で結果が出力されます。
+デフォルトでは、アイテム名を TSV として出力します。
 
-## 出力データ仕様
+### よく使うオプション
 
-デフォルトで以下の列がTSV形式で出力されます。
+```bash
+# 詳細情報を表示 (permissions、owners、size、modifiedTime、id、name)
+python gdls.py <FOLDER_ID> -l
 
-| 列名 | 説明 |
-|------|------|
-| id | Google Drive ファイルID |
-| webViewLink | Google Drive リンク |
-| name | アイテム名 |
-| mimeType | ファイルタイプ |
-| description | アイテムの説明 |
-| owners | 所有者名 |
-| modifiedTime | 更新日時 |
-| viewedByMeTime | 最終閲覧日時 |
-| createdTime | 作成日時 |
-| oldestDescendantCreationTime | 子孫アイテムのうち最古の作成日時 |
-| size | ファイル/フォルダサイズ（バイト単位。子孫を含む） |
-| quotaBytesUsed | 容量使用量（バイト単位。子孫を含む） |
+# フォルダ自身の情報を表示
+python gdls.py <FOLDER_ID> -i
 
-**注**: フォルダの `size` と `quotaBytesUsed` は、そのフォルダ配下にある全子孫要素の合計値として計算されます。
+# 人間向けの行形式表示
+python gdls.py <FOLDER_ID> -d
 
-## カスタマイズ（環境変数）
+# 出力フィールドの指定
+python gdls.py <FOLDER_ID> -f "id,name,size,createdTime,modifiedTime"
 
-環境変数を使用することで、認証ファイルの読み込み場所を変更できます（出力ファイルは常に実行場所になります）。
+# 再帰的にファイル・フォルダを列挙
+python gdls.py <FOLDER_ID> -R
 
-**Windows PowerShell:**
+# JSON形式で出力
+python gdls.py <FOLDER_ID> -j
+
+# ファイルに出力
+python gdls.py <FOLDER_ID> -l -o output.tsv
+
+# 既存ファイルへの追記
+python gdls.py <FOLDER_ID_1> -l -o combined.tsv
+python gdls.py <FOLDER_ID_2> -l -o combined.tsv --append  --no-header
+
+# ソート (' desc'接尾辞で降順)
+python gdls.py <FOLDER_ID> -R -f "name,size" -S "size desc"
+
+# パイプ処理 (`-q` / `--quiet` でメッセージ・ログ抑制)
+python gdls.py <FOLDER_ID> -R -q | grep "\.pdf$"
+```
+
+## Output
+
+### TSV
+
+デフォルトの出力形式は TSV です。
+
+ターミナルでは列幅を自動調整した表形式で表示され、ファイルへのリダイレクトやパイプ処理ではタブ区切りの TSV として扱われます。
+
+```bash
+python gdls.py <FOLDER_ID> -l
+python gdls.py <FOLDER_ID> -l > files.tsv
+```
+
+`--no-header` を指定すると TSV のヘッダーを省略できます。
+
+### JSON (`-j` / `--json` オプション)
+
+```bash
+python gdls.py <FOLDER_ID> -Rj -o drive_data.json
+```
+
+データ処理や分析など、機械的に扱う場合に適しています。
+
+### Terminal output
+
+ターミナルに直接出力する場合は、以下の機能が利用できます。
+
+* ファイル、フォルダ、ショートカットを区別するカラー表示
+* 日本語などの全角文字を考慮した列揃え
+* 再帰探索時のプログレスバー
+
+パイプやファイルリダイレクト時には、カラー表示は自動的に無効になります。
+
+## Output fields
+
+`--fields` では Google Drive API の標準フィールドに加えて、以下の独自フィールドを利用できます。
+
+| Field                 | Description           |
+| --------------------- | --------------------- |
+| `permissions`         | `ls` 風のファイルタイプ・権限表示   |
+| `relativePath`        | ルートからの相対パス            |
+| `depth`               | フォルダ階層の深さ             |
+| `totalSize`           | 子孫アイテムを含むサイズ合計        |
+| `totalQuotaBytesUsed` | 子孫アイテムを含む容量使用量        |
+| `oldestCreatedTime`   | 子孫アイテムを含む最古の作成日時      |
+
+`totalSize`、`totalQuotaBytesUsed`、`oldestCreatedTime` などの集計フィールドを指定すると、必要に応じて自動的に子孫アイテムが探索されます。
+
+## Command-line options
+
+| Option              | Description                   |
+| ------------------- | ----------------------------- |
+| `target`            | Google Drive のフォルダ URL または ID |
+| `-R`, `--recursive` | 子孫アイテムを再帰的に取得                 |
+| `--include-trashed` | ゴミ箱内のアイテムを含める                 |
+| `-i`, `--item`      | 指定アイテム自身を取得                   |
+| `-d`, `--describe`        | アイテムの詳細情報を人間向けに表示             |
+| `-l`, `--long`      | 基本属性を長形式で表示                   |
+| `-f`, `--fields`    | 出力フィールドを指定                    |
+| `-S`, `--sort`            | 出力をソート                        |
+| `-o`, `--output`    | 出力ファイルを指定                     |
+| `-a`, `--append`    | 既存の出力ファイルに追記                  |
+| `-j`, `--json`            | JSON 形式で出力                    |
+| `--no-header`       | TSV のヘッダーを省略                  |
+| `--log-level`       | ログレベルを指定                      |
+| `-q`, `--quiet`     | 進捗表示・通常ログを抑制                  |
+| `--client-secret`   | `client_secret.json` のパスを指定   |
+| `--token-file`      | `token.json` のパスを指定           |
+| `-h`, `--help`      | ヘルプを表示                        |
+
+## Examples
+
+### フォルダの合計サイズを取得
+
+```bash
+python gdls.py <FOLDER_ID> -i -f "id,name,totalSize"
+```
+
+
+## Environment variables
+
+認証ファイルの場所は環境変数でも指定できます。
+
+### Windows PowerShell
+
 ```powershell
 $env:GDLS_CLIENT_SECRET_FILE="C:\custom\path\client_secret.json"
 $env:GDLS_TOKEN_FILE="C:\custom\path\token.json"
+
+python gdls.py <FOLDER_ID>
 ```
 
-**macOS/Linux:**
+### macOS / Linux
+
 ```bash
 export GDLS_CLIENT_SECRET_FILE="/custom/path/client_secret.json"
 export GDLS_TOKEN_FILE="/custom/path/token.json"
+
+python gdls.py <FOLDER_ID>
 ```
 
-## トラブルシューティング
+コマンドラインオプション (`--client-secret, --token-file`) で指定したパスが環境変数より優先されます。
 
-### "Client Secret file not found" エラー
-`client_secret.json` が正しい場所に配置されているか確認してください。
+## Troubleshooting
 
-- **Windows**: `Get-Item -Path "$env:APPDATA\SnowyTools\GDLS\client_secret.json"`
-- **macOS/Linux**: `ls -la ~/.config/SnowyTools/GDLS/`
+### `Client Secret file not found`
 
-### 認証に失敗する場合
-Google Cloud Console の OAuth 同意画面の設定を確認した上で、既存の `token.json` を削除し、初回認証からやり直してください。
+`client_secret.json` が所定の場所にあるか確認してください。
 
-- **Windows**: `Remove-Item "$env:APPDATA\SnowyTools\GDLS\token.json"`
-- **macOS/Linux**: `rm ~/.config/SnowyTools/GDLS/token.json`
+コマンドライン引数でパスの直接指定もできます。
 
-## ライセンス
+```bash
+python gdls.py <FOLDER_ID> --client-secret /path/to/client_secret.json
+```
 
-このプロジェクトは BSD 3-Clause の下で公開されています。
+### `invalid_grant` などの認証エラー
+
+既存の `token.json` を削除したうえで再認証してください。
+
+**Windows**:
+
+```powershell
+Remove-Item "$env:APPDATA\SnowyTools\GDLS\token.json" -ErrorAction SilentlyContinue
+```
+
+**macOS / Linux**:
+
+```bash
+rm -f ~/.config/SnowyTools/GDLS/token.json
+```
+
+その後、再度 `gdls.py` を実行してください。
+
+### フォルダが見つからない
+
+以下を確認してください。
+
+- フォルダ ID または URL が正しいか
+- 認証した Google アカウントにアクセス権があるか
+- 対象フォルダがゴミ箱に入っていないか
+  - ゴミ箱内アイテムを表示したい場合は `--include-trashed` を使用する
+
+### 大規模なフォルダで時間がかかる場合
+
+- 再帰的探索を無効化する
+  - `--recursive` を使用しない
+  - `--fields` に集計フィールドを指定しない (`totalSize`、`oldestCreatedTime` など)
+- `--quiet` により進捗表示を無効化する
+
+## License
+
+BSD 3-Clause
+

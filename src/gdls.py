@@ -1057,10 +1057,10 @@ def parse_arguments() -> argparse.Namespace:
 		パース済みの引数名前空間。
 	"""
 	parser = argparse.ArgumentParser(
-		description="Export Google Drive folder contents to TSV or JSON"
+		description="Export Google Drive items to TSV or JSON"
 	)
 	parser.add_argument('target',
-							  help="Google Drive folder URL or folder ID")
+							  help="Google Drive file/folder URL or ID")
 	
 	# 探索範囲
 	parser.add_argument('-R', '--recursive', action='store_true',
@@ -1070,13 +1070,13 @@ def parse_arguments() -> argparse.Namespace:
 	
 	# 単一アイテムモード
 	item_group = parser.add_mutually_exclusive_group()
-	item_group.add_argument('-s', '--item', action='store_true',
+	item_group.add_argument('-i', '--item', action='store_true',
 									help="Fetch and output information ONLY for the specified target file/folder itself")
-	item_group.add_argument('--describe', action='store_true',
+	item_group.add_argument('-d', '--describe', action='store_true',
 									help="Display detailed information for a single target item in a readable format")
 	
 	# 出力結果のソート
-	parser.add_argument('--sort', type=str,
+	parser.add_argument('-S', '--sort', type=str,
 							  help="Comma-separated list of keys to sort the output by (e.g., 'size desc, name')")
 	
 	# 出力属性の指定
@@ -1093,7 +1093,7 @@ def parse_arguments() -> argparse.Namespace:
 							  help="Append to existing output file")
 	
 	# 出力形式
-	parser.add_argument('--json', action='store_true',
+	parser.add_argument('-j', '--json', action='store_true',
 							  help="Output in JSON format (instead of TSV)")
 	
 	# 出力形式オプション
