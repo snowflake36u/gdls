@@ -5,6 +5,7 @@ import logging
 import re
 import sys
 import time
+import unicodedata
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -445,6 +446,20 @@ def format_cell_for_tsv(val: object) -> str:
 		return json.dumps(val, ensure_ascii=False)
 	return str(val)
 
+def get_display_width(text: str) -> int:
+	"""文字列の表示幅を計算する。
+
+	コンソール等で等幅フォントを使用した場合の視覚的な文字幅を算出する。
+	全角文字は2、半角文字は1として計算する。
+	"""
+	width = 0
+	for char in text:
+		if unicodedata.east_asian_width(char) in ('F', 'W', 'A'):
+			width += 2
+		else:
+			width += 1
+	return width
+
 def write_records_to_tsv(
 		records: list[dict],
 		headers: list[str],
@@ -467,11 +482,34 @@ def write_records_to_tsv(
 		for record in records
 	]
 	
-	# 常に標準出力に書き出す
-	stdout_writer = csv.DictWriter(sys.stdout, fieldnames=headers, delimiter='\t')
-	if not no_header:
-		stdout_writer.writeheader()
-	stdout_writer.writerows(formatted_records)
+	# 実行環境がコンソールの場合は列を揃えて見やすく表示し、
+	# パイプやリダイレクトの場合は純粋なTSVを出力する。
+	if sys.stdout.isatty():
+		col_widths = { h: get_display_width(h) for h in headers }
+		for record in formatted_records:
+			for h in headers:
+				val = record.get(h, '')
+				col_widths[h] = max(col_widths[h], get_display_width(val))
+		
+		if not no_header:
+			header_parts = []
+			for h in headers:
+				padding = ' ' * (col_widths[h] - get_display_width(h))
+				header_parts.append(h + padding)
+			sys.stdout.write('  '.join(header_parts) + '\n')
+		
+		for record in formatted_records:
+			line_parts = []
+			for h in headers:
+				val = record.get(h, '')
+				padding = ' ' * (col_widths[h] - get_display_width(val))
+				line_parts.append(val + padding)
+			sys.stdout.write('  '.join(line_parts) + '\n')
+	else:
+		stdout_writer = csv.DictWriter(sys.stdout, fieldnames=headers, delimiter='\t')
+		if not no_header:
+			stdout_writer.writeheader()
+		stdout_writer.writerows(formatted_records)
 	
 	if not output:
 		return
@@ -818,7 +856,6 @@ def parse_arguments() -> argparse.Namespace:
 									 help="Output preset basic attributes in long format")
 	field_group.add_argument('-f', '--fields',
 									 help="Attributes to export (comma separated)")
-	format_group = parser.add_mutually_exclusive_group()
 	
 	# 出力ファイル指定
 	parser.add_argument('-o', '--output', type=str,
@@ -827,10 +864,8 @@ def parse_arguments() -> argparse.Namespace:
 							  help="Append to existing output file")
 	
 	# 出力形式
-	format_group.add_argument('--tsv', action='store_true',
-									  help="Output in TSV format (default)")
-	format_group.add_argument('--json', action='store_true',
-									  help="Output in JSON format")
+	parser.add_argument('--json', action='store_true',
+							  help="Output in JSON format (instead of TSV)")
 	
 	# 出力形式オプション
 	parser.add_argument('--no-header', action='store_true',
