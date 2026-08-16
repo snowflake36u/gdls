@@ -30,10 +30,10 @@ FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder'
 
 # デフォルトの出力属性定義
 LONG_OUTPUT_HEADERS = [
-	'id',
 	'owners',
 	'size',
 	'modifiedTime',
+	'id',
 	'name',
 ]
 
@@ -109,12 +109,21 @@ def extract_folder_id(url_or_id: str) -> str:
 	Returns:
 		抽出されたID文字列。
 	"""
-	# URL から抽出
-	match = re.search(r'(?:folders/|id=)([a-zA-Z0-9_-]+)', url_or_id)
+	# Google DriveのURL構造（ドメイン、パス、クエリパラメータ）に厳密に一致するか検証し、
+	# ID部分を抽出する。無関係な文字列からの誤抽出を防ぐ。
+	match = re.match(
+		r'^https?://(?:[a-zA-Z0-9-]+\.)*google\.com/(?:[^?#]*/)*(?:folders/|file/d/|[^#]*[?&]id=)([a-zA-Z0-9_-]+)(?:[/?&#].*)?$',
+		url_or_id
+	)
 	if match:
 		return match.group(1)
 	
-	# そのままIDとして扱う
+	# URLではないが、妥当なID文字列の形式を満たしているか検証する
+	if re.fullmatch(r'[a-zA-Z0-9_-]+', url_or_id):
+		return url_or_id
+	
+	# 抽出や形式の検証に失敗した場合でも、後続のAPI呼び出しによる
+	# エラーハンドリングに委ねるため、元の文字列をそのまま返す。
 	return url_or_id
 
 def get_required_api_fields(
