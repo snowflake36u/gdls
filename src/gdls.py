@@ -61,8 +61,8 @@ class ColoredFormatter(logging.Formatter):
 				return f"{color}{message}{ANSI_COLOR_RESET}"
 		return message
 
-# デフォルトの出力属性定義
-LONG_OUTPUT_HEADERS = [
+# デフォルトの出力フィールド定義
+DEFAULT_LONG_FIELDS = [
 	'permissions',
 	'owners',
 	'size',
@@ -71,8 +71,8 @@ LONG_OUTPUT_HEADERS = [
 	'name',
 ]
 
-# 出力属性と必要なAPIフィールドの対応マッピング
-HEADER_API_DEPENDENCIES: dict[str, list[str]] = {
+# 出力フィールドと必要なAPIフィールドの対応マッピング
+FIELD_API_DEPENDENCIES: dict[str, list[str]] = {
 	'oldestCreatedTime': ['createdTime'],
 	'totalSize': ['size'],
 	'totalQuotaBytesUsed': ['quotaBytesUsed'],
@@ -159,13 +159,14 @@ def get_drive_service(
 			token.write(creds.to_json())
 	return build('drive', 'v3', credentials=creds)
 
-def extract_folder_id(url_or_id: str) -> str:
-	"""URLまたはID文字列からフォルダIDのみを抽出する。
+def extract_drive_id(url_or_id: str) -> str:
+	"""URLまたはID文字列からGoogle DriveアイテムIDのみを抽出する。
 
 	Args:
 		url_or_id: Google DriveのURLまたはファイル・フォルダID。
 			スラッシュのみ(/)または 'root' が指定された場合は、ルートディレクトリ（マイドライブ）の
 			エイリアスとして解決する。
+
 	Returns:
 		抽出されたID文字列。
 	"""
@@ -190,12 +191,12 @@ def extract_folder_id(url_or_id: str) -> str:
 	return url_or_id
 
 def get_required_api_fields(
-		output_headers: list[str],
+		output_fields: list[str],
 ) -> tuple[list[str], list[str]]:
-	"""出力対象ヘッダーに必要なAPIフィールドを決定する。
+	"""出力対象フィールドに必要なAPIフィールドを決定する。
 
 	Args:
-		output_headers: 出力対象ヘッダー。
+		output_fields: 出力対象フィールド。
 
 	Returns:
 		ルートアイテム用フィールドと子孫アイテム用フィールドのタプル。
@@ -203,14 +204,14 @@ def get_required_api_fields(
 	root_field_set = { 'id', 'mimeType', 'name' }
 	descendant_field_set = set(root_field_set)
 	
-	for header in output_headers:
+	for field in output_fields:
 		# APIフィールド依存が定義されていればそれを採用し、
 		# なければ属性名をそのままAPIフィールド名として扱う。
-		dependencies = HEADER_API_DEPENDENCIES.get(header, [header])
+		dependencies = FIELD_API_DEPENDENCIES.get(field, [field])
 		
 		root_field_set.update(dependencies)
 		
-		if header in AGGREGATIVE_FIELDS:
+		if field in AGGREGATIVE_FIELDS:
 			descendant_field_set.update(dependencies)
 	
 	return list(root_field_set), list(descendant_field_set)
@@ -258,9 +259,18 @@ def fetch_children(
 	return children
 
 def propagate_to_parent(
-		item_record, parent_record, output_headers
-):
-	if 'oldestCreatedTime' in output_headers:
+		item_record: dict,
+		parent_record: dict,
+		output_fields: list[str],
+) -> None:
+	"""子要素の集約値を親要素のレコードへ加算・伝播する。
+
+	Args:
+		item_record: 子要素のレコード。
+		parent_record: 親要素のレコード。
+		output_fields: 出力対象のフィールド一覧。
+	"""
+	if 'oldestCreatedTime' in output_fields:
 		item_oldest = item_record['oldestCreatedTime']
 		parent_oldest = parent_record['oldestCreatedTime']
 		
@@ -270,17 +280,17 @@ def propagate_to_parent(
 		):
 			parent_record['oldestCreatedTime'] = item_oldest
 	
-	if 'totalSize' in output_headers:
+	if 'totalSize' in output_fields:
 		parent_record['totalSize'] += item_record['totalSize']
 	
-	if 'totalQuotaBytesUsed' in output_headers:
+	if 'totalQuotaBytesUsed' in output_fields:
 		parent_record['totalQuotaBytesUsed'] += item_record['totalQuotaBytesUsed']
 
 def fetch_records_recursively(
 		service: Resource,
 		root_folder_id: str,
 		api_fields: list[str],
-		output_headers: list[str],
+		output_fields: list[str],
 		include_trashed: bool = False,
 		quiet: bool = False,
 		needs_descendant_agg: bool = True,
@@ -296,7 +306,7 @@ def fetch_records_recursively(
 		service: Google Drive APIサービス。
 		root_folder_id: 起点フォルダID。
 		api_fields: APIから取得するフィールド。
-		output_headers: 出力対象のヘッダー。
+		output_fields: 出力対象のフィールド。
 		include_trashed: ゴミ箱内の要素を含めるかどうか。
 		quiet: 進捗表示を抑制するかどうか。
 		needs_descendant_agg: 子孫集約値を計算するかどうか。
@@ -334,7 +344,7 @@ def fetch_records_recursively(
 			child_depth = 1
 			
 			record = create_item_record(
-				child, output_headers,
+				child, output_fields,
 				relative_path=child_name, depth=child_depth,
 			)
 			records.append(record)
@@ -368,7 +378,7 @@ def fetch_records_recursively(
 						propagate_to_parent(
 							records_by_id[current_id],
 							records_by_id[parent_id],
-							output_headers,
+							output_fields,
 						)
 					continue
 				
@@ -393,7 +403,7 @@ def fetch_records_recursively(
 					relative_path = f'{parent_path}/{desc_name}' if parent_path else desc_name
 					
 					record = create_item_record(
-						desc, output_headers,
+						desc, output_fields,
 						relative_path=relative_path, depth=desc_depth,
 					)
 					records.append(record)
@@ -492,17 +502,17 @@ def get_permissions_string(item: dict) -> str:
 
 def create_item_record(
 		item: dict,
-		headers: list[str],
+		fields: list[str],
 		relative_path: str | None = None,
 		depth: int = 0,
 ) -> dict:
-	"""フォルダアイテムのレコードを構築する。
+	"""Google Driveアイテムのレコードを構築する。
 
-	指定された出力ヘッダーに基づき、APIレスポンスから必要な属性を抽出・整形する。
+	指定された出力フィールドに基づき、APIレスポンスから必要な属性を抽出・整形する。
 
 	Args:
 		item: APIから取得したアイテム。
-		headers: 出力対象のヘッダー一覧。
+		fields: 出力対象のフィールド一覧。
 		relative_path: アイテムのルートからの相対パス。
 		depth: アイテムの階層深度。
 
@@ -513,30 +523,30 @@ def create_item_record(
 	
 	# レコードを構築
 	record = { }
-	for header in headers:
-		if header == 'owners':
-			record[header] = owner_name
-		elif header == 'permissions':
-			record[header] = get_permissions_string(item)
-		elif header == 'oldestCreatedTime':
+	for field in fields:
+		if field == 'owners':
+			record[field] = owner_name
+		elif field == 'permissions':
+			record[field] = get_permissions_string(item)
+		elif field == 'oldestCreatedTime':
 			# 初期値は自身の作成日時とし、探索完了後に子孫を含む集約値へ更新する。
-			record[header] = item.get('createdTime', '')
-		elif header == 'totalSize':
+			record[field] = item.get('createdTime', '')
+		elif field == 'totalSize':
 			# 初期値は自身のサイズとし、探索完了後に子孫を含む集約値へ更新する。
-			record[header] = int(item.get('size') or 0)
-		elif header == 'totalQuotaBytesUsed':
+			record[field] = int(item.get('size') or 0)
+		elif field == 'totalQuotaBytesUsed':
 			# 初期値は自身の使用量とし、探索完了後に子孫を含む集約値へ更新する。
-			record[header] = int(item.get('quotaBytesUsed') or 0)
-		elif header == 'relativePath':
-			record[header] = item.get('name', '') if relative_path is None else relative_path
-		elif header == 'depth':
-			record[header] = depth
-		elif header == 'parents':
+			record[field] = int(item.get('quotaBytesUsed') or 0)
+		elif field == 'relativePath':
+			record[field] = item.get('name', '') if relative_path is None else relative_path
+		elif field == 'depth':
+			record[field] = depth
+		elif field == 'parents':
 			# API仕様上、親IDのリストとして返却されるため直接カンマ区切りで結合する。
-			record[header] = ','.join(item.get('parents', []))
+			record[field] = ','.join(item.get('parents', []))
 		else:
 			# APIが返した値をそのまま設定する
-			record[header] = item.get(header, '')
+			record[field] = item.get(field, '')
 	
 	# コンソール出力時の色付け判定等に使用する内部用メタデータ
 	record['_mimeType'] = item.get('mimeType', '')
@@ -646,7 +656,7 @@ def get_display_width(text: str) -> int:
 
 def write_records_to_tsv(
 		records: list[dict],
-		headers: list[str],
+		fields: list[str],
 		output: Path | None,
 		append: bool = False,
 		no_header: bool = False,
@@ -655,7 +665,7 @@ def write_records_to_tsv(
 
 	Args:
 		records: 書き込むレコード一覧。
-		headers: ヘッダー一覧。
+		fields: 出力対象のフィールド一覧。
 		output: 出力ファイルパス。Noneの場合は標準出力のみ。
 		append: 既存ファイルへの追記を行うかどうか。
 		no_header: ヘッダー行を出力しないかどうか。
@@ -669,29 +679,29 @@ def write_records_to_tsv(
 	# 実行環境がコンソールの場合は列を揃えて見やすく表示し、
 	# パイプやリダイレクトの場合は純粋なTSVを出力する。
 	if sys.stdout.isatty():
-		col_widths = { h: get_display_width(h) for h in headers }
+		col_widths = { field: get_display_width(field) for field in fields }
 		for record in formatted_records:
-			for h in headers:
-				val = record.get(h, '')
-				col_widths[h] = max(col_widths[h], get_display_width(val))
+			for field in fields:
+				val = record.get(field, '')
+				col_widths[field] = max(col_widths[field], get_display_width(val))
 		
 		if not no_header:
 			header_parts = []
-			for h in headers:
-				padding = ' ' * (col_widths[h] - get_display_width(h))
-				colored_h = f"{ANSI_COLOR_HEADER}{h}{ANSI_COLOR_RESET}"
+			for field in fields:
+				padding = ' ' * (col_widths[field] - get_display_width(field))
+				colored_h = f"{ANSI_COLOR_HEADER}{field}{ANSI_COLOR_RESET}"
 				header_parts.append(colored_h + padding)
 			sys.stdout.write('  '.join(header_parts) + '\n')
 		
 		for record in formatted_records:
 			line_parts = []
 			mime_type = record.get('_mimeType', '')
-			for h in headers:
-				val = record.get(h, '')
-				padding = ' ' * (col_widths[h] - get_display_width(val))
+			for field in fields:
+				val = record.get(field, '')
+				padding = ' ' * (col_widths[field] - get_display_width(val))
 				
 				# ターミナル出力時は特定フィールドに対しMIMEタイプに基づいた色付けを行う
-				if h in ('name', 'relativePath'):
+				if field in ('name', 'relativePath'):
 					if mime_type == FOLDER_MIME_TYPE:
 						val = f"{ANSI_COLOR_BLUE}{val}{ANSI_COLOR_RESET}"
 					elif mime_type == 'application/vnd.google-apps.shortcut':
@@ -702,7 +712,7 @@ def write_records_to_tsv(
 	else:
 		# extrasaction='ignore' を指定し、_mimeType などの内部キーが出力されることを防ぐ
 		stdout_writer = csv.DictWriter(
-			sys.stdout, fieldnames=headers, delimiter='\t', extrasaction='ignore'
+			sys.stdout, fieldnames=fields, delimiter='\t', extrasaction='ignore'
 		)
 		if not no_header:
 			stdout_writer.writeheader()
@@ -717,9 +727,9 @@ def write_records_to_tsv(
 	
 	write_mode = 'a' if append else 'w'
 	
-	with open(output, write_mode, encoding='utf-8', newline='') as f:
+	with open(output, write_mode, encoding='utf-8', newline='') as field:
 		file_writer = csv.DictWriter(
-			f, fieldnames=headers, delimiter='\t', extrasaction='ignore'
+			field, fieldnames=fields, delimiter='\t', extrasaction='ignore'
 		)
 		
 		# 追記対象が存在しない、または空ファイルの場合は
@@ -885,9 +895,9 @@ def print_describe_info(
 	with open(output, write_mode, encoding='utf-8') as file:
 		file.write(file_str + '\n')
 
-def list_drive_folder(
+def list_drive_items(
 		service: Resource,
-		target_folder_id: str,
+		target_id: str,
 		fields: list[str] | None = None,
 		include_trashed: bool = False,
 		item_mode: bool = False,
@@ -900,19 +910,19 @@ def list_drive_folder(
 		quiet: bool = False,
 		sort_arg: str | None = None,
 ) -> None:
-	"""フォルダ内の情報を取得し、指定形式で出力する。
+	"""指定されたIDのコンテンツを取得し、指定形式で出力する。
 
 	Args:
 		service: Google Drive APIサービス。
-		target_folder_id: 対象フォルダID。
-		fields: 出力対象のヘッダー。
+		target_id: 対象のファイルまたはフォルダID。
+		fields: 出力対象のフィールド一覧。
 		include_trashed: ゴミ箱内のアイテムを含めるかどうか。
 		item_mode: 対象アイテム自身のみを出力するかどうか。
 		describe_mode: 対象アイテムを詳細表示するかどうか。
 		recursive_mode: 子孫要素まで再帰的に取得するかどうか。
+		output: 出力ファイル名。
 		output_format: 出力形式。
 		no_header: TSVのヘッダーを抑制するかどうか。
-		output: 出力ファイル名。
 		append_mode: 既存ファイルに追記するかどうか。
 		quiet: 進捗バーと非エラーログを抑制するかどうか。
 		sort_arg: カンマ区切りのソート指定文字列。
@@ -921,18 +931,18 @@ def list_drive_folder(
 		Exception: Google Drive APIで取得に失敗した場合。
 	"""
 	if fields is not None:
-		output_headers = fields
+		output_fields = fields
 	elif describe_mode:
-		output_headers = LONG_OUTPUT_HEADERS
+		output_fields = DEFAULT_LONG_FIELDS
 	else:
-		output_headers = ['name']
+		output_fields = ['name']
 	
 	output_path = get_output_path(output) if output else None
 	
 	# APIに問い合わせる属性を決定する
-	root_api_fields, descendant_api_fields = get_required_api_fields(output_headers)
+	root_api_fields, descendant_api_fields = get_required_api_fields(output_fields)
 	needs_descendant_agg = any(
-		header in AGGREGATIVE_FIELDS for header in output_headers
+		field in AGGREGATIVE_FIELDS for field in output_fields
 	)
 	is_single_item_mode = item_mode or describe_mode
 	
@@ -942,13 +952,13 @@ def list_drive_folder(
 	if is_single_item_mode:
 		# 対象アイテムそのものを1つだけ取得する。
 		item = service.files().get(
-			fileId=target_folder_id,
+			fileId=target_id,
 			fields=', '.join(root_api_fields),
 			supportsAllDrives=True,
 		).execute()
 		
 		target_record = create_item_record(
-			item, output_headers,
+			item, output_fields,
 			relative_path=item.get('name', ''), depth=0,
 		)
 		records_to_output = [target_record]
@@ -959,14 +969,14 @@ def list_drive_folder(
 				service,
 				item['id'],
 				descendant_api_fields,
-				output_headers,
+				output_fields,
 				include_trashed,
 				quiet=quiet,
 			)
 			
 			# 直下アイテムの集約結果を対象アイテム自身のレコードへ合算する
 			for child_record in root_records:
-				propagate_to_parent(child_record, target_record, output_headers)
+				propagate_to_parent(child_record, target_record, output_fields)
 	
 	elif recursive_mode or needs_descendant_agg:
 		# 再帰探索、集約、レコード構築を同じ走査で実行する。
@@ -974,9 +984,9 @@ def list_drive_folder(
 		# その場合の最終的な出力対象は直下アイテム（root_records）のみに絞り込む。
 		all_records, root_records = fetch_records_recursively(
 			service,
-			target_folder_id,
+			target_id,
 			root_api_fields,
-			output_headers,
+			output_fields,
 			include_trashed,
 			quiet=quiet,
 			needs_descendant_agg=needs_descendant_agg,
@@ -987,12 +997,12 @@ def list_drive_folder(
 	else:
 		# 集約が不要な場合は、指定フォルダの直下要素だけを取得する。
 		root_items = fetch_children(
-			service, target_folder_id, root_api_fields, include_trashed,
+			service, target_id, root_api_fields, include_trashed,
 		)
 		
 		records_to_output = [
 			create_item_record(
-				child, output_headers,
+				child, output_fields,
 				relative_path=child.get('name', ''), depth=1,
 			)
 			for child in root_items
@@ -1003,7 +1013,7 @@ def list_drive_folder(
 		# 対象が非フォルダであった場合に自身のレコードを構築するため、必要なフィールドを網羅して取得する
 		all_required_fields = list(set(root_api_fields + descendant_api_fields))
 		target_info = service.files().get(
-			fileId=target_folder_id,
+			fileId=target_id,
 			fields=', '.join(all_required_fields),
 			supportsAllDrives=True,
 		).execute()
@@ -1012,7 +1022,7 @@ def list_drive_folder(
 			# フォルダでない場合は、Linuxのlsコマンドの慣習に合わせて対象アイテム自身を出力結果とする
 			records_to_output = [
 				create_item_record(
-					target_info, output_headers,
+					target_info, output_fields,
 					relative_path=target_info.get('name', ''), depth=0,
 				)
 			]
@@ -1040,7 +1050,7 @@ def list_drive_folder(
 	else:
 		write_records_to_tsv(
 			records=records_to_output,
-			headers=output_headers,
+			fields=output_fields,
 			output=output_path,
 			append=append_mode,
 			no_header=no_header,
@@ -1115,10 +1125,10 @@ def parse_arguments() -> argparse.Namespace:
 	
 	return parser.parse_args()
 
-def parse_output_headers(
+def parse_fields_arg(
 		fields_arg: str | None,
 ) -> list[str] | None:
-	"""フィールド引数を解析して出力ヘッダーを取得する。
+	"""フィールド引数を解析して出力フィールド一覧を取得する。
 
 	Args:
 		fields_arg: カンマ区切りのフィールド文字列。
@@ -1175,15 +1185,15 @@ def main() -> int:
 		logging.error(f"Error: {exc}")
 		return 2
 	
-	target_id = extract_folder_id(args.target)
+	target_id = extract_drive_id(args.target)
 	if not target_id:
 		logging.error("Error: Unable to extract a valid folder ID.")
 		return 2
 	
 	if args.long:
-		output_headers = LONG_OUTPUT_HEADERS
+		output_fields = DEFAULT_LONG_FIELDS
 	else:
-		output_headers = parse_output_headers(args.fields)
+		output_fields = parse_fields_arg(args.fields)
 	
 	output_format = 'json' if args.json else 'tsv'
 	
@@ -1207,10 +1217,10 @@ def main() -> int:
 		return 1
 	
 	try:
-		list_drive_folder(
+		list_drive_items(
 			service,
 			target_id,
-			fields=output_headers,
+			fields=output_fields,
 			include_trashed=args.include_trashed,
 			item_mode=args.item,
 			describe_mode=args.describe,
