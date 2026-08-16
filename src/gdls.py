@@ -28,6 +28,39 @@ SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 # Google DriveフォルダのMIMEタイプ
 FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder'
 
+# コンソール出力用のANSIエスケープコード
+ANSI_COLOR_BLUE = '\033[1;34m'
+ANSI_COLOR_CYAN = '\033[1;36m'
+ANSI_COLOR_HEADER = '\033[1;33m'
+ANSI_COLOR_RESET = '\033[0m'
+
+class ColoredFormatter(logging.Formatter):
+	"""コンソール出力時にログレベルに応じた着色を行うロギングフォーマッタ。"""
+	
+	LOG_COLORS = {
+		logging.DEBUG: '\033[0;36m',
+		logging.INFO: '\033[1;32m',
+		logging.WARNING: '\033[1;33m',
+		logging.ERROR: '\033[1;31m',
+		logging.CRITICAL: '\033[1;41m',
+	}
+	
+	def format(self, record: logging.LogRecord) -> str:
+		"""ログメッセージをフォーマットし、端末出力時のみ着色する。
+
+		Args:
+			record: ログレコード。
+
+		Returns:
+			フォーマット済み文字列。
+		"""
+		message = super().format(record)
+		if sys.stderr.isatty():
+			color = self.LOG_COLORS.get(record.levelno, '')
+			if color:
+				return f"{color}{message}{ANSI_COLOR_RESET}"
+		return message
+
 # デフォルトの出力属性定義
 LONG_OUTPUT_HEADERS = [
 	'permissions',
@@ -474,7 +507,7 @@ def create_item_record(
 		depth: アイテムの階層深度。
 
 	Returns:
-		構築されたレコード辞書。集約対象の値は探索完了時に更新される。
+		構築されたレコード辞書。各属性の値には未集約の初期値が設定される。
 	"""
 	owner_name = get_owner_name(item)
 	
@@ -504,6 +537,9 @@ def create_item_record(
 		else:
 			# APIが返した値をそのまま設定する
 			record[header] = item.get(header, '')
+	
+	# コンソール出力時の色付け判定等に使用する内部用メタデータ
+	record['_mimeType'] = item.get('mimeType', '')
 	
 	return record
 
@@ -643,18 +679,31 @@ def write_records_to_tsv(
 			header_parts = []
 			for h in headers:
 				padding = ' ' * (col_widths[h] - get_display_width(h))
-				header_parts.append(h + padding)
+				colored_h = f"{ANSI_COLOR_HEADER}{h}{ANSI_COLOR_RESET}"
+				header_parts.append(colored_h + padding)
 			sys.stdout.write('  '.join(header_parts) + '\n')
 		
 		for record in formatted_records:
 			line_parts = []
+			mime_type = record.get('_mimeType', '')
 			for h in headers:
 				val = record.get(h, '')
 				padding = ' ' * (col_widths[h] - get_display_width(val))
+				
+				# ターミナル出力時は特定フィールドに対しMIMEタイプに基づいた色付けを行う
+				if h in ('name', 'relativePath'):
+					if mime_type == FOLDER_MIME_TYPE:
+						val = f"{ANSI_COLOR_BLUE}{val}{ANSI_COLOR_RESET}"
+					elif mime_type == 'application/vnd.google-apps.shortcut':
+						val = f"{ANSI_COLOR_CYAN}{val}{ANSI_COLOR_RESET}"
+				
 				line_parts.append(val + padding)
 			sys.stdout.write('  '.join(line_parts) + '\n')
 	else:
-		stdout_writer = csv.DictWriter(sys.stdout, fieldnames=headers, delimiter='\t')
+		# extrasaction='ignore' を指定し、_mimeType などの内部キーが出力されることを防ぐ
+		stdout_writer = csv.DictWriter(
+			sys.stdout, fieldnames=headers, delimiter='\t', extrasaction='ignore'
+		)
 		if not no_header:
 			stdout_writer.writeheader()
 		stdout_writer.writerows(formatted_records)
@@ -669,7 +718,9 @@ def write_records_to_tsv(
 	write_mode = 'a' if append else 'w'
 	
 	with open(output, write_mode, encoding='utf-8', newline='') as f:
-		file_writer = csv.DictWriter(f, fieldnames=headers, delimiter='\t')
+		file_writer = csv.DictWriter(
+			f, fieldnames=headers, delimiter='\t', extrasaction='ignore'
+		)
 		
 		# 追記対象が存在しない、または空ファイルの場合は
 		# 新しいTSVとしてヘッダーを書き出す。
@@ -720,19 +771,25 @@ def write_records_to_json(
 		ValueError: 追記対象のJSONが配列ではない場合。
 		json.JSONDecodeError: 追記対象のJSONを解析できない場合。
 	"""
+	# JSONに出力しない内部キーを除外する
+	clean_records = [
+		{ k: v for k, v in r.items() if not k.startswith('_') }
+		for r in records
+	]
+	
 	# 標準出力では現在取得したレコードだけを出力する。
-	json_data = json.dumps(records, ensure_ascii=False, indent=2)
+	json_data = json.dumps(clean_records, ensure_ascii=False, indent=2)
 	sys.stdout.write(json_data + '\n')
 	
 	if not output:
 		return
 	
-	records_to_write = records
+	records_to_write = clean_records
 	
 	if append and output.exists() and output.stat().st_size > 0:
 		# 新規リストの生成に伴うメモリ負荷を避けるため、既存リストに直接拡張する。
 		records_to_write = load_json_array(output)
-		records_to_write.extend(records)
+		records_to_write.extend(clean_records)
 	
 	file_json_data = json.dumps(
 		records_to_write,
@@ -743,24 +800,35 @@ def write_records_to_json(
 	with open(output, 'w', encoding='utf-8') as file:
 		file.write(file_json_data + '\n')
 
-def format_describe_record(record: dict) -> str:
+def format_describe_record(record: dict, colorize: bool = False) -> str:
 	"""レコードを人間向けの詳細表示形式へ変換する。
 
 	Args:
 		record: 出力対象レコード。
+		colorize: キーに着色を行うかどうか。
 
 	Returns:
 		詳細表示用文字列。
 	"""
+	display_record = { k: v for k, v in record.items() if not k.startswith('_') }
+	if not display_record:
+		return ''
+	
 	max_key_len = max(
-		(len(key) for key in record),
+		(len(key) for key in display_record),
 		default=0,
 	)
 	
-	return '\n'.join(
-		f"{key.ljust(max_key_len)} : {value}"
-			for key, value in record.items()
-	)
+	lines = []
+	for key, value in display_record.items():
+		padded_key = key.ljust(max_key_len)
+		if colorize:
+			key_str = f"{ANSI_COLOR_HEADER}{padded_key}{ANSI_COLOR_RESET}"
+		else:
+			key_str = padded_key
+		lines.append(f"{key_str} : {value}")
+	
+	return '\n'.join(lines)
 
 def print_describe_info(
 		record: dict,
@@ -776,15 +844,17 @@ def print_describe_info(
 		use_json: JSON形式を使用するかどうか。
 		append: 既存ファイルへ追記するかどうか。
 	"""
+	clean_record = { k: v for k, v in record.items() if not k.startswith('_') }
+	
 	if use_json:
-		records_to_write = [record]
+		records_to_write = [clean_record]
 		
 		if append and output and output.exists():
 			if output.stat().st_size > 0:
-				records_to_write = load_json_array(output) + [record]
+				records_to_write = load_json_array(output) + [clean_record]
 		
 		output_str = json.dumps(
-			records_to_write if append else record,
+			records_to_write if append else clean_record,
 			ensure_ascii=False,
 			indent=2,
 		)
@@ -797,22 +867,23 @@ def print_describe_info(
 		
 		return
 	
-	output_str = format_describe_record(record)
-	
-	# 標準出力に出力
-	sys.stdout.write(output_str + '\n')
+	# 標準出力に出力 (着色・列揃えあり)
+	stdout_str = format_describe_record(clean_record, colorize=sys.stdout.isatty())
+	sys.stdout.write(stdout_str + '\n')
 	
 	if not output:
 		return
 	
 	# ファイル出力
+	file_str = format_describe_record(clean_record, colorize=False)
+	
 	if append and output.exists() and output.stat().st_size > 0:
-		output_str = '\n' + output_str
+		file_str = '\n' + file_str
 	
 	write_mode = 'a' if append else 'w'
 	
 	with open(output, write_mode, encoding='utf-8') as file:
-		file.write(output_str + '\n')
+		file.write(file_str + '\n')
 
 def list_drive_folder(
 		service: Resource,
@@ -1093,9 +1164,10 @@ def main() -> int:
 	
 	# コマンドライン引数に基づいてロギングを設定し、標準エラー出力に振り向ける
 	numeric_level = getattr(logging, args.log_level.upper())
-	logging.basicConfig(
-		level=numeric_level, format='%(message)s', stream=sys.stderr
-	)
+	
+	handler = logging.StreamHandler(sys.stderr)
+	handler.setFormatter(ColoredFormatter("%(message)s"))
+	logging.basicConfig(level=numeric_level, handlers=[handler])
 	
 	try:
 		validate_arguments(args)
