@@ -107,10 +107,14 @@ def extract_folder_id(url_or_id: str) -> str:
 
 	Args:
 		url_or_id: Google DriveのURLまたはファイル・フォルダID。
-
+			スラッシュのみ(/)または 'root' が指定された場合は、ルートディレクトリ（マイドライブ）の
+			エイリアスとして解決する。
 	Returns:
 		抽出されたID文字列。
 	"""
+	if url_or_id == '/' or url_or_id == 'root':
+		return 'root'
+	
 	# Google DriveのURL構造（ドメイン、パス、クエリパラメータ）に厳密に一致するか検証し、
 	# ID部分を抽出する。無関係な文字列からの誤抽出を防ぐ。
 	match = re.match(
