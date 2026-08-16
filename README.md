@@ -26,8 +26,8 @@ It can display file and folder names, sizes, modification dates, owners, and mor
 ## Installation
 
 ```bash
-git clone https://github.com/snowflake36u/google-drive-lister
-cd google-drive-lister
+git clone https://github.com/snowflake36u/gdls
+cd gdls
 pip install -r requirements.txt
 ```
 

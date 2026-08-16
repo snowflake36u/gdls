@@ -26,8 +26,8 @@ Google Drive のフォルダ構造を `ls` コマンド風に一覧表示する�
 ## Installation
 
 ```bash
-git clone https://github.com/snowflake36u/google-drive-lister
-cd google-drive-lister
+git clone https://github.com/snowflake36u/gdls
+cd gdls
 pip install -r requirements.txt
 ```
 
