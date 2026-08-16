@@ -30,6 +30,7 @@ FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder'
 
 # デフォルトの出力属性定義
 LONG_OUTPUT_HEADERS = [
+	'permissions',
 	'owners',
 	'size',
 	'modifiedTime',
@@ -44,6 +45,7 @@ HEADER_API_DEPENDENCIES: dict[str, list[str]] = {
 	'totalQuotaBytesUsed': ['quotaBytesUsed'],
 	'relativePath': ['name'],
 	'depth': [],
+	'permissions': ['mimeType', 'capabilities/canEdit', 'shared'],
 }
 
 # 子孫要素の取得・集約が必要な属性一覧
@@ -392,6 +394,41 @@ def is_folder_item(item: dict) -> bool:
 	"""
 	return item.get('mimeType') == FOLDER_MIME_TYPE
 
+def get_permissions_string(item: dict) -> str:
+	"""アイテムからlsコマンドのようなパーミッション文字列を生成する。
+
+	ファイルタイプ(1文字)、読み書き実行の権限(3文字)、共有ステータス(1文字)を
+	組み合わせた5文字の文字列を構築する。
+
+	Args:
+		item: Google Driveアイテム。
+
+	Returns:
+		フォーマットされたパーミッション文字列。
+	"""
+	mime_type = item.get('mimeType', '')
+	
+	if mime_type == FOLDER_MIME_TYPE:
+		type_char = 'd'
+	elif mime_type == 'application/vnd.google-apps.shortcut':
+		type_char = 'l'
+	else:
+		type_char = '-'
+	
+	capabilities = item.get('capabilities', { })
+	# API経由でアイテム情報を取得できている時点で、読み取り権限(Read)は必ず存在する
+	can_read = True
+	can_edit = capabilities.get('canEdit', False)
+	
+	read_char = 'r' if can_read else '-'
+	write_char = 'w' if can_edit else '-'
+	# フォルダとして認識されるものはディレクトリ移動可能とみなして 'x' を付与する
+	exec_char = 'x' if type_char == 'd' else '-'
+	
+	shared_char = '+' if item.get('shared', False) else '-'
+	
+	return f'{type_char}{read_char}{write_char}{exec_char}{shared_char}'
+
 def create_item_record(
 		item: dict,
 		headers: list[str],
@@ -418,6 +455,8 @@ def create_item_record(
 	for header in headers:
 		if header == 'owners':
 			record[header] = owner_name
+		elif header == 'permissions':
+			record[header] = get_permissions_string(item)
 		elif header == 'oldestCreatedTime':
 			# 初期値は自身の作成日時とし、探索完了後に子孫を含む集約値へ更新する。
 			record[header] = item.get('createdTime', '')
@@ -560,7 +599,7 @@ def load_json_array(path: Path) -> list[dict]:
 		data = json.load(file)
 	
 	if not isinstance(data, list):
-		raise ValueError("Cannot append to JSON file because the root value "
+		raise ValueError(f"Cannot append to JSON file because the root value "
 							  f"is not an array: {path}")
 	
 	return data
