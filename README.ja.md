@@ -4,7 +4,7 @@ Google Drive のフォルダ構造を `ls` コマンド風に一覧表示する�
 
 ファイル・フォルダの名前やサイズ、更新日時、所有者などを一覧表示でき、TSV / JSON 形式での出力、再帰的な探索、共有ドライブ、集計情報の取得にも対応しています。
 
-## Features
+## 主な機能
 
 - Google Drive のフォルダを階層的に探索
 - 通常のドライブおよび共有ドライブに対応
@@ -17,13 +17,13 @@ Google Drive のフォルダ構造を `ls` コマンド風に一覧表示する�
 - Google OAuth 2.0 による読み取り専用アクセス
 - OAuth トークンの自動更新
 
-## Requirements
+## 前提環境
 
 - Python 3.10+
 - Google Drive API
 - `requirements.txt` に記載された依存パッケージ
 
-## Installation
+## インストール方法
 
 ```bash
 git clone https://github.com/snowflake36u/gdls
@@ -31,7 +31,7 @@ cd gdls
 pip install -r requirements.txt
 ```
 
-## Authentication
+## API認証
 
 Google Drive API を利用するため、OAuth 2.0 の認証情報が必要です。
 
@@ -50,7 +50,7 @@ Google Drive API を利用するため、OAuth 2.0 の認証情報が必要で�
 
 認証ファイルの場所は `--client-secret` / `--token-file` オプションまたは対応する環境変数でも変更できます。
 
-## Usage
+## 使い方
 
 ### 基本
 
@@ -106,7 +106,7 @@ python gdls.py <FOLDER_ID> -R -f "name,size" -S "size desc"
 python gdls.py <FOLDER_ID> -R -q | grep "\.pdf$"
 ```
 
-## Output
+## データ出力
 
 ### TSV
 
@@ -129,7 +129,7 @@ python gdls.py <FOLDER_ID> -Rj -o drive_data.json
 
 データ処理や分析など、機械的に扱う場合に適しています。
 
-### Terminal output
+### ターミナル出力
 
 ターミナルに直接出力する場合は、以下の機能が利用できます。
 
@@ -139,7 +139,7 @@ python gdls.py <FOLDER_ID> -Rj -o drive_data.json
 
 パイプやファイルリダイレクト時には、カラー表示は自動的に無効になります。
 
-## Output fields
+## 出力フィールド
 
 `--fields` では Google Drive API の標準フィールドに加えて、以下の独自フィールドを利用できます。
 
@@ -154,7 +154,7 @@ python gdls.py <FOLDER_ID> -Rj -o drive_data.json
 
 `totalSize`、`totalQuotaBytesUsed`、`oldestCreatedTime` などの集計フィールドを指定すると、必要に応じて自動的に子孫アイテムが探索されます。
 
-## Command-line options
+## コマンドライン引数
 
 | Option              | Description                   |
 | ------------------- | ----------------------------- |
@@ -176,7 +176,7 @@ python gdls.py <FOLDER_ID> -Rj -o drive_data.json
 | `--token-file`      | `token.json` のパスを指定           |
 | `-h`, `--help`      | ヘルプを表示                        |
 
-## Examples
+## 使用例
 
 ### フォルダの合計サイズを取得
 
@@ -185,7 +185,7 @@ python gdls.py <FOLDER_ID> -i -f "id,name,totalSize"
 ```
 
 
-## Environment variables
+## 環境変数
 
 認証ファイルの場所は環境変数でも指定できます。
 
@@ -209,7 +209,7 @@ python gdls.py <FOLDER_ID>
 
 コマンドラインオプション (`--client-secret, --token-file`) で指定したパスが環境変数より優先されます。
 
-## Troubleshooting
+## トラブルシューティング
 
 ### `Client Secret file not found`
 
@@ -255,7 +255,7 @@ rm -f ~/.config/SnowyTools/GDLS/token.json
   - `--fields` に集計フィールドを指定しない (`totalSize`、`oldestCreatedTime` など)
 - `--quiet` により進捗表示を無効化する
 
-## License
+## ライセンス
 
 BSD 3-Clause
 
