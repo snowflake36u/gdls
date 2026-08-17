@@ -3,6 +3,7 @@ import csv
 import json
 import logging
 import re
+import shutil
 import sys
 import time
 import unicodedata
@@ -654,6 +655,65 @@ def get_display_width(text: str) -> int:
 			width += 1
 	return width
 
+def format_grid_item(record: dict) -> tuple[str, int]:
+	"""グリッド出力用にアイテム名と表示幅を取得し、端末出力時は色付けを行う。
+
+	Args:
+		record: Google Driveアイテムのレコード。
+
+	Returns:
+		フォーマット済み表示名と計算された表示幅のタプル。
+	"""
+	name = str(record.get('name', ''))
+	width = get_display_width(name)
+	
+	if not sys.stdout.isatty():
+		return name, width
+	
+	mime_type = record.get('_mimeType', '')
+	if mime_type == FOLDER_MIME_TYPE:
+		formatted = f"{ANSI_COLOR_BLUE}{name}{ANSI_COLOR_RESET}"
+	elif mime_type == 'application/vnd.google-apps.shortcut':
+		formatted = f"{ANSI_COLOR_CYAN}{name}{ANSI_COLOR_RESET}"
+	else:
+		formatted = name
+	
+	return formatted, width
+
+def write_records_as_grid(records: list[dict]) -> None:
+	"""端末の表示幅に合わせて要素を列優先のグリッド形式で標準出力へ表示する。
+
+	Args:
+		records: 出力対象のレコード一覧。
+	"""
+	if not records:
+		return
+	
+	formatted_items = [format_grid_item(record) for record in records]
+	max_name_width = max(width for _, width in formatted_items)
+	column_spacing = 2
+	
+	terminal_width = shutil.get_terminal_size().columns
+	total_item_width = max_name_width + column_spacing
+	num_columns = max(1, terminal_width // total_item_width)
+	
+	total_items = len(formatted_items)
+	num_rows = (total_items + num_columns - 1) // num_columns
+	
+	for row in range(num_rows):
+		line_parts = []
+		for col in range(num_columns):
+			index = row + col * num_rows
+			if index < total_items:
+				formatted_name, width = formatted_items[index]
+				# 最終列および最終要素以外には列間隔用のパディングを付与する
+				if col < num_columns - 1 and index + num_rows < total_items:
+					padding = ' ' * (max_name_width - width + column_spacing)
+					line_parts.append(formatted_name + padding)
+				else:
+					line_parts.append(formatted_name)
+		sys.stdout.write(''.join(line_parts) + '\n')
+
 def write_records_to_tsv(
 		records: list[dict],
 		fields: list[str],
@@ -661,7 +721,7 @@ def write_records_to_tsv(
 		append: bool = False,
 		no_header: bool = False,
 ) -> None:
-	"""レコードを標準出力と指定ファイルにTSV形式で出力する。
+	"""レコードを標準出力と指定ファイルにTSV形式またはグリッド形式で出力する。
 
 	Args:
 		records: 書き込むレコード一覧。
@@ -676,39 +736,43 @@ def write_records_to_tsv(
 		for record in records
 	]
 	
-	# 実行環境がコンソールの場合は列を揃えて見やすく表示し、
-	# パイプやリダイレクトの場合は純粋なTSVを出力する。
+	# 実行環境がコンソールの場合は視認性を考慮したフォーマットを行い、
+	# パイプやリダイレクトの場合は機械処理に適したTSVを出力する。
 	if sys.stdout.isatty():
-		col_widths = { field: get_display_width(field) for field in fields }
-		for record in formatted_records:
-			for field in fields:
-				val = record.get(field, '')
-				col_widths[field] = max(col_widths[field], get_display_width(val))
-		
-		if not no_header:
-			header_parts = []
-			for field in fields:
-				padding = ' ' * (col_widths[field] - get_display_width(field))
-				colored_h = f"{ANSI_COLOR_HEADER}{field}{ANSI_COLOR_RESET}"
-				header_parts.append(colored_h + padding)
-			sys.stdout.write('  '.join(header_parts) + '\n')
-		
-		for record in formatted_records:
-			line_parts = []
-			mime_type = record.get('_mimeType', '')
-			for field in fields:
-				val = record.get(field, '')
-				padding = ' ' * (col_widths[field] - get_display_width(val))
-				
-				# ターミナル出力時は特定フィールドに対しMIMEタイプに基づいた色付けを行う
-				if field in ('name', 'relativePath'):
-					if mime_type == FOLDER_MIME_TYPE:
-						val = f"{ANSI_COLOR_BLUE}{val}{ANSI_COLOR_RESET}"
-					elif mime_type == 'application/vnd.google-apps.shortcut':
-						val = f"{ANSI_COLOR_CYAN}{val}{ANSI_COLOR_RESET}"
-				
-				line_parts.append(val + padding)
-			sys.stdout.write('  '.join(line_parts) + '\n')
+		if fields == ['name']:
+			# デフォルト表示（名前のみ）の場合は端末幅に合わせたグリッド表示を行う
+			write_records_as_grid(records)
+		else:
+			col_widths = { field: get_display_width(field) for field in fields }
+			for record in formatted_records:
+				for field in fields:
+					val = record.get(field, '')
+					col_widths[field] = max(col_widths[field], get_display_width(val))
+			
+			if not no_header:
+				header_parts = []
+				for field in fields:
+					padding = ' ' * (col_widths[field] - get_display_width(field))
+					colored_h = f"{ANSI_COLOR_HEADER}{field}{ANSI_COLOR_RESET}"
+					header_parts.append(colored_h + padding)
+				sys.stdout.write('  '.join(header_parts) + '\n')
+			
+			for record in formatted_records:
+				line_parts = []
+				mime_type = record.get('_mimeType', '')
+				for field in fields:
+					val = record.get(field, '')
+					padding = ' ' * (col_widths[field] - get_display_width(val))
+					
+					# ターミナル出力時は特定フィールドに対しMIMEタイプに基づいた色付けを行う
+					if field in ('name', 'relativePath'):
+						if mime_type == FOLDER_MIME_TYPE:
+							val = f"{ANSI_COLOR_BLUE}{val}{ANSI_COLOR_RESET}"
+						elif mime_type == 'application/vnd.google-apps.shortcut':
+							val = f"{ANSI_COLOR_CYAN}{val}{ANSI_COLOR_RESET}"
+					
+					line_parts.append(val + padding)
+				sys.stdout.write('  '.join(line_parts) + '\n')
 	else:
 		# extrasaction='ignore' を指定し、_mimeType などの内部キーが出力されることを防ぐ
 		stdout_writer = csv.DictWriter(
