@@ -1141,7 +1141,7 @@ def parse_arguments() -> argparse.Namespace:
 	# 探索範囲
 	parser.add_argument('-R', '--recursive', action='store_true',
 							  help="Recursively list items in subfolders")
-	parser.add_argument('--include-trashed', action='store_true',
+	parser.add_argument('-t', '--include-trashed', action='store_true',
 							  help="Include trashed files in the calculation and output")
 	
 	# 単一アイテムモード
@@ -1173,7 +1173,7 @@ def parse_arguments() -> argparse.Namespace:
 							  help="Output in JSON format (instead of TSV)")
 	
 	# 出力形式オプション
-	parser.add_argument('--no-header', action='store_true',
+	parser.add_argument('-H', '--no-header', action='store_true',
 							  help="Suppress header line when exporting TSV")
 	
 	# メッセージ設定
