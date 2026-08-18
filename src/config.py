@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import platform
 
+APP_GROUP_NAME = "SnowyTools"
 APP_NAME = "GDLS"
 
 def get_app_data_dir():
@@ -9,8 +10,8 @@ def get_app_data_dir():
 	
 	Returns:
 		アプリケーションデータディレクトリのパス
-		- Windows: %APPDATA%\SnowyTools\GDLS
-		- macOS/Linux: ~/.config/SnowyTools/GDLS
+		- Windows: %APPDATA%\<APP_GROUP_NAME>\GDLS
+		- macOS/Linux: ~/.config/<APP_GROUP_NAME>/GDLS
 	"""
 	system = platform.system()
 	if system == "Windows":
@@ -18,7 +19,7 @@ def get_app_data_dir():
 	else:  # macOS, Linux
 		app_data = Path.home() / ".config"
 	
-	return app_data / "SnowyTools" / APP_NAME
+	return app_data / APP_GROUP_NAME / APP_NAME
 
 def get_file_path(env_var: str, default_filename: str, cli_arg: str | None = None) -> Path:
 	"""ファイルパスを取得（CLI引数→環境変数→デフォルトの優先順序）
