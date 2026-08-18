@@ -774,9 +774,11 @@ def write_records_to_tsv(
 					line_parts.append(val + padding)
 				sys.stdout.write('  '.join(line_parts) + '\n')
 	else:
+		# パイプライン・リダイレクトへの出力
 		# extrasaction='ignore' を指定し、_mimeType などの内部キーが出力されることを防ぐ
 		stdout_writer = csv.DictWriter(
-			sys.stdout, fieldnames=fields, delimiter='\t', extrasaction='ignore'
+			sys.stdout, fieldnames=fields, delimiter='\t', extrasaction='ignore',
+			lineterminator='\n'
 		)
 		if not no_header:
 			stdout_writer.writeheader()
