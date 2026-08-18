@@ -35,6 +35,12 @@ ANSI_COLOR_CYAN = '\033[1;36m'
 ANSI_COLOR_HEADER = '\033[1;33m'
 ANSI_COLOR_RESET = '\033[0m'
 
+# URLやIDの抽出用正規表現（オーバーヘッドを避けるため事前コンパイル）
+DRIVE_URL_PATTERN = re.compile(
+	r'^https?://(?:[a-zA-Z0-9-]+\.)*google\.com/(?:[^?#]*/)*(?:folders/|file/d/|[^#]*[?&]id=)([a-zA-Z0-9_-]+)(?:[/?&#].*)?$'
+)
+VALID_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
+
 class ColoredFormatter(logging.Formatter):
 	"""コンソール出力時にログレベルに応じた着色を行うロギングフォーマッタ。"""
 	
@@ -176,15 +182,12 @@ def extract_drive_id(url_or_id: str) -> str:
 	
 	# Google DriveのURL構造（ドメイン、パス、クエリパラメータ）に厳密に一致するか検証し、
 	# ID部分を抽出する。無関係な文字列からの誤抽出を防ぐ。
-	match = re.match(
-		r'^https?://(?:[a-zA-Z0-9-]+\.)*google\.com/(?:[^?#]*/)*(?:folders/|file/d/|[^#]*[?&]id=)([a-zA-Z0-9_-]+)(?:[/?&#].*)?$',
-		url_or_id
-	)
+	match = DRIVE_URL_PATTERN.match(url_or_id)
 	if match:
 		return match.group(1)
 	
 	# URLではないが、妥当なID文字列の形式を満たしているか検証する
-	if re.fullmatch(r'[a-zA-Z0-9_-]+', url_or_id):
+	if VALID_ID_PATTERN.fullmatch(url_or_id):
 		return url_or_id
 	
 	# 抽出や形式の検証に失敗した場合でも、後続のAPI呼び出しによる
@@ -224,6 +227,8 @@ def fetch_children(
 		include_trashed: bool = False,
 ) -> list[dict]:
 	"""指定フォルダの直下の要素一覧を取得する。
+
+	APIのページネーションに従い、要素がなくなるまで反復して取得する。
 
 	Args:
 		service: Google Drive APIサービス。
@@ -272,20 +277,18 @@ def propagate_to_parent(
 		output_fields: 出力対象のフィールド一覧。
 	"""
 	if 'oldestCreatedTime' in output_fields:
-		item_oldest = item_record['oldestCreatedTime']
-		parent_oldest = parent_record['oldestCreatedTime']
+		item_oldest = item_record.get('oldestCreatedTime')
+		parent_oldest = parent_record.get('oldestCreatedTime')
 		
 		# 最古作成日時の更新（文字列の辞書順比較によって判別）
-		if item_oldest and (
-				not parent_oldest or item_oldest < parent_oldest
-		):
+		if item_oldest and (not parent_oldest or item_oldest < parent_oldest):
 			parent_record['oldestCreatedTime'] = item_oldest
 	
 	if 'totalSize' in output_fields:
-		parent_record['totalSize'] += item_record['totalSize']
+		parent_record['totalSize'] += item_record.get('totalSize', 0)
 	
 	if 'totalQuotaBytesUsed' in output_fields:
-		parent_record['totalQuotaBytesUsed'] += item_record['totalQuotaBytesUsed']
+		parent_record['totalQuotaBytesUsed'] += item_record.get('totalQuotaBytesUsed', 0)
 
 def fetch_records_recursively(
 		service: Resource,
@@ -354,9 +357,7 @@ def fetch_records_recursively(
 			parent_ids[child_id] = root_folder_id
 			
 			if not is_folder_item(child):
-				progress.set_postfix_str(
-					"descendants=0", refresh=False,
-				)
+				progress.set_postfix_str("descendants=0", refresh=False)
 				continue
 			
 			# === フォルダの場合は子孫要素を再帰的に探索する ===
@@ -374,7 +375,7 @@ def fetch_records_recursively(
 					# 帰りがけの集計伝播処理（子孫の走査が完了した後に実行される）
 					# 自身のレコードを補完し、親に情報を伝播する。
 					# =====
-					parent_id = parent_ids[current_id]
+					parent_id = parent_ids.get(current_id)
 					if parent_id and parent_id in records_by_id:
 						propagate_to_parent(
 							records_by_id[current_id],
@@ -434,7 +435,7 @@ def fetch_records_recursively(
 			
 			# 現在のトップレベル子の探索完了時には必ず最新値を表示する。
 			progress.set_postfix_str(
-				f'descendants={descendant_count:,}', refresh=False,
+				f"descendants={descendant_count:,}", refresh=False,
 			)
 	
 	return records, root_records
@@ -646,6 +647,12 @@ def get_display_width(text: str) -> int:
 
 	コンソール等で等幅フォントを使用した場合の視覚的な文字幅を算出する。
 	全角文字は2、半角文字は1として計算する。
+
+	Args:
+		text: 対象文字列。
+
+	Returns:
+		表示幅。
 	"""
 	width = 0
 	for char in text:
@@ -800,9 +807,7 @@ def write_records_to_tsv(
 		
 		# 追記対象が存在しない、または空ファイルの場合は
 		# 新しいTSVとしてヘッダーを書き出す。
-		should_write_header = not no_header and (
-				not append or not output_has_content
-		)
+		should_write_header = not no_header and (not append or not output_has_content)
 		
 		if should_write_header:
 			file_writer.writeheader()
