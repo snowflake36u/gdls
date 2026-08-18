@@ -160,7 +160,7 @@ Specifying aggregated fields (`totalSize`, `totalQuotaBytesUsed`, `oldestCreated
 | ------------------- | ---------------------------------------------------------- |
 | `target`            | Google Drive folder URL or ID                             |
 | `-R`, `--recursive` | Recursively list descendant items                          |
-| `--include-trashed` | Include items in the trash                                 |
+| `-t`, `--include-trashed` | Include items in the trash                                 |
 | `-i`, `--item`      | Target the specified item/folder itself                    |
 | `-d`, `--describe`  | Display detailed item metadata in human-readable format    |
 | `-l`, `--long`      | Display standard attributes in long format                 |
@@ -169,7 +169,7 @@ Specifying aggregated fields (`totalSize`, `totalQuotaBytesUsed`, `oldestCreated
 | `-o`, `--output`    | Output file path                                           |
 | `-a`, `--append`    | Append output to an existing file                          |
 | `-j`, `--json`      | Output in JSON format                                      |
-| `--no-header`       | Omit header row in TSV output                              |
+| `-H`, `--no-header`       | Omit header row in TSV output                              |
 | `--log-level`       | Set logging verbosity level                                |
 | `-q`, `--quiet`     | Suppress progress bar and non-error logs                  |
 | `--client-secret`   | Path to `client_secret.json`                               |

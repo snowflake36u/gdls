@@ -160,7 +160,7 @@ python gdls.py <FOLDER_ID> -Rj -o drive_data.json
 | ------------------- | ----------------------------- |
 | `target`            | Google Drive のフォルダ URL または ID |
 | `-R`, `--recursive` | 子孫アイテムを再帰的に取得                 |
-| `--include-trashed` | ゴミ箱内のアイテムを含める                 |
+| `-t`, `--include-trashed` | ゴミ箱内のアイテムを含める                 |
 | `-i`, `--item`      | 指定アイテム自身を取得                   |
 | `-d`, `--describe`        | アイテムの詳細情報を人間向けに表示             |
 | `-l`, `--long`      | 基本属性を長形式で表示                   |
@@ -169,7 +169,7 @@ python gdls.py <FOLDER_ID> -Rj -o drive_data.json
 | `-o`, `--output`    | 出力ファイルを指定                     |
 | `-a`, `--append`    | 既存の出力ファイルに追記                  |
 | `-j`, `--json`            | JSON 形式で出力                    |
-| `--no-header`       | TSV のヘッダーを省略                  |
+| `-H`, `--no-header`       | TSV のヘッダーを省略                  |
 | `--log-level`       | ログレベルを指定                      |
 | `-q`, `--quiet`     | 進捗表示・通常ログを抑制                  |
 | `--client-secret`   | `client_secret.json` のパスを指定   |
