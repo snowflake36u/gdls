@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gdls"
+version = "0.1.0"
+description = "Google Drive listing CLI"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+	"google-api-python-client",
+	"google-auth-oauthlib",
+	"tqdm",
+]
+
+[project.scripts]
+gdls = "gdls.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

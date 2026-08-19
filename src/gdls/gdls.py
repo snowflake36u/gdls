@@ -15,7 +15,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import Resource, build
 from tqdm import tqdm
 
-from config import (
+from .config import (
 	APP_NAME,
 	ensure_directories,
 	get_client_secret_file,

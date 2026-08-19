@@ -21,14 +21,28 @@ Google Drive のフォルダ構造を `ls` コマンド風に一覧表示する�
 
 - Python 3.10+
 - Google Drive API
-- `requirements.txt` に記載された依存パッケージ
+- `pyproject.toml` で管理される依存パッケージ
 
 ## インストール方法
+
+ローカル開発用の editable install では次のようにインストールします。
 
 ```bash
 git clone https://github.com/snowflake36u/gdls
 cd gdls
-pip install -r requirements.txt
+python -m pip install -e .
+```
+
+PyPI に公開後は以下でもインストール可能です。
+
+```bash
+pip install gdls
+```
+
+インストール後はどの作業ディレクトリからでも次のコマンドで利用できます。
+
+```bash
+gdls --help
 ```
 
 ## API認証

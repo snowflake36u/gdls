@@ -21,14 +21,28 @@ It displays file and folder names, sizes, modification dates, owners, and more. 
 
 - Python 3.10+
 - Google Drive API enabled
-- Dependencies listed in `requirements.txt`
+- Dependencies managed in `pyproject.toml`
 
 ## Installation
+
+For local development / editable install:
 
 ```bash
 git clone https://github.com/snowflake36u/gdls
 cd gdls
-pip install -r requirements.txt
+python -m pip install -e .
+```
+
+Once published to PyPI, installation will also be:
+
+```bash
+pip install gdls
+```
+
+After installation, the command is available anywhere:
+
+```bash
+gdls --help
 ```
 
 ## Authentication
