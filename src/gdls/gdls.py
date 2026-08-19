@@ -81,18 +81,36 @@ DEFAULT_LONG_FIELDS = [
 # 出力フィールドと必要なAPIフィールドの対応マッピング
 FIELD_API_DEPENDENCIES: dict[str, list[str]] = {
 	'oldestCreatedTime': ['createdTime'],
+	'latestCreatedTime': ['createdTime'],
+	'oldestModifiedTime': ['modifiedTime'],
+	'latestModifiedTime': ['modifiedTime'],
 	'totalSize': ['size'],
 	'totalQuotaBytesUsed': ['quotaBytesUsed'],
 	'relativePath': ['name'],
 	'depth': [],
 	'permissions': ['mimeType', 'capabilities/canEdit', 'shared'],
+	'itemCount': ['mimeType'],
+	'fileCount': ['mimeType'],
+	'folderCount': ['mimeType'],
+	'childItemCount': ['mimeType'],
+	'childFileCount': ['mimeType'],
+	'childFolderCount': ['mimeType'],
 }
 
 # 子孫要素の取得・集約が必要な属性一覧
 AGGREGATIVE_FIELDS: set[str] = {
 	'oldestCreatedTime',  # 自分自身および子孫アイテムのうち最古の作成日時
+	'latestCreatedTime',  # 自分自身および子孫アイテムのうち最新の作成日時
+	'oldestModifiedTime',  # 自分自身および子孫アイテムのうち最古の更新日時
+	'latestModifiedTime',  # 自分自身および子孫アイテムのうち最新の更新日時
 	'totalSize',
 	'totalQuotaBytesUsed',
+	'itemCount',
+	'fileCount',
+	'folderCount',
+	'childItemCount',
+	'childFileCount',
+	'childFolderCount',
 }
 
 # 数値として評価・ソートすべき非文字列属性および数値属性
@@ -101,6 +119,12 @@ NUMERIC_FIELDS: set[str] = {
 	'quotaBytesUsed',
 	'version',
 	'depth',
+	'itemCount',
+	'fileCount',
+	'folderCount',
+	'childItemCount',
+	'childFileCount',
+	'childFolderCount',
 }
 
 # ブール値として評価・ソートすべき属性
@@ -284,11 +308,63 @@ def propagate_to_parent(
 		if item_oldest and (not parent_oldest or item_oldest < parent_oldest):
 			parent_record['oldestCreatedTime'] = item_oldest
 	
+	if 'latestCreatedTime' in output_fields:
+		item_latest_c = item_record.get('latestCreatedTime')
+		parent_latest_c = parent_record.get('latestCreatedTime')
+		
+		# 最新作成日時の更新
+		if item_latest_c and (not parent_latest_c or item_latest_c > parent_latest_c):
+			parent_record['latestCreatedTime'] = item_latest_c
+	
+	if 'oldestModifiedTime' in output_fields:
+		item_oldest_m = item_record.get('oldestModifiedTime')
+		parent_oldest_m = parent_record.get('oldestModifiedTime')
+		
+		# 最古更新日時の更新
+		if item_oldest_m and (not parent_oldest_m or item_oldest_m < parent_oldest_m):
+			parent_record['oldestModifiedTime'] = item_oldest_m
+	
+	if 'latestModifiedTime' in output_fields:
+		item_latest = item_record.get('latestModifiedTime')
+		parent_latest = parent_record.get('latestModifiedTime')
+		
+		# 最新更新日時の更新
+		if item_latest and (not parent_latest or item_latest > parent_latest):
+			parent_record['latestModifiedTime'] = item_latest
+	
 	if 'totalSize' in output_fields:
 		parent_record['totalSize'] += item_record.get('totalSize', 0)
 	
 	if 'totalQuotaBytesUsed' in output_fields:
 		parent_record['totalQuotaBytesUsed'] += item_record.get('totalQuotaBytesUsed', 0)
+	
+	if 'itemCount' in output_fields:
+		# 自身（1）と、自身が持つ子孫の数を加算
+		parent_record['itemCount'] += 1 + item_record.get('itemCount', 0)
+	
+	if 'fileCount' in output_fields:
+		is_folder = item_record.get('_mimeType') == FOLDER_MIME_TYPE
+		self_count = 0 if is_folder else 1
+		parent_record['fileCount'] += self_count + item_record.get('fileCount', 0)
+	
+	if 'folderCount' in output_fields:
+		is_folder = item_record.get('_mimeType') == FOLDER_MIME_TYPE
+		self_count = 1 if is_folder else 0
+		parent_record['folderCount'] += self_count + item_record.get('folderCount', 0)
+	
+	if 'childItemCount' in output_fields:
+		# 直下の子アイテム数として自身（1）のみを加算
+		parent_record['childItemCount'] += 1
+	
+	if 'childFileCount' in output_fields:
+		is_folder = item_record.get('_mimeType') == FOLDER_MIME_TYPE
+		if not is_folder:
+			parent_record['childFileCount'] += 1
+	
+	if 'childFolderCount' in output_fields:
+		is_folder = item_record.get('_mimeType') == FOLDER_MIME_TYPE
+		if is_folder:
+			parent_record['childFolderCount'] += 1
 
 def fetch_records_recursively(
 		service: Resource,
@@ -533,12 +609,24 @@ def create_item_record(
 		elif field == 'oldestCreatedTime':
 			# 初期値は自身の作成日時とし、探索完了後に子孫を含む集約値へ更新する。
 			record[field] = item.get('createdTime', '')
+		elif field == 'latestCreatedTime':
+			# 初期値は自身の作成日時とし、探索完了後に子孫を含む集約値へ更新する。
+			record[field] = item.get('createdTime', '')
+		elif field == 'oldestModifiedTime':
+			# 初期値は自身の更新日時とし、探索完了後に子孫を含む集約値へ更新する。
+			record[field] = item.get('modifiedTime', '')
+		elif field == 'latestModifiedTime':
+			# 初期値は自身の更新日時とし、探索完了後に子孫を含む集約値へ更新する。
+			record[field] = item.get('modifiedTime', '')
 		elif field == 'totalSize':
 			# 初期値は自身のサイズとし、探索完了後に子孫を含む集約値へ更新する。
 			record[field] = int(item.get('size') or 0)
 		elif field == 'totalQuotaBytesUsed':
 			# 初期値は自身の使用量とし、探索完了後に子孫を含む集約値へ更新する。
 			record[field] = int(item.get('quotaBytesUsed') or 0)
+		elif field in ('itemCount', 'fileCount', 'folderCount', 'childItemCount', 'childFileCount', 'childFolderCount'):
+			# 初期値は0とし、探索完了後に子孫を含む集約値へ更新する。
+			record[field] = 0
 		elif field == 'relativePath':
 			record[field] = item.get('name', '') if relative_path is None else relative_path
 		elif field == 'depth':

@@ -157,14 +157,20 @@ Color formatting is automatically disabled when output is piped or redirected to
 
 In addition to standard Google Drive API fields, `--fields` supports the following custom fields:
 
-| Field                 | Description                                      |
+| Field                 | Description |
 | --------------------- | ------------------------------------------------ |
-| `permissions`         | `ls`-style file type and permission representation (e.g. `lrwx+`, `-rw-+`) |
-| `relativePath`        | Relative path from the root folder              |
-| `depth`               | Directory nesting depth                          |
-| `totalSize`           | Total size including all descendant items        |
-| `totalQuotaBytesUsed` | Total quota used including all descendant items  |
-| `oldestCreatedTime`   | Oldest creation date among descendant items      |
+| `permissions` | `ls`-style file type and permission representation (e.g. `lrwx+`, `-rw-+`) |
+| `relativePath`        | Relative path from the target folder (Be aware that this is not a unique signature, as duplicate item names are allowed) |
+| `depth`               | Directory nesting depth |
+| `itemCount`           | Number of descendant items |
+| `fileCount`           | Number of descendant files |
+| `folderCount`         | Number of descendant folders |
+| `childItemCount`      | Number of child items |
+| `childFileCount`      | Number of child files |
+| `childFolderCount`    | Number of child folders |
+| `totalSize`           | Total size including all descendant items |
+| `totalQuotaBytesUsed` | Total quota used including all descendant items |
+| `oldestCreatedTime`   | Oldest creation date among descendant items |
 
 Specifying aggregated fields (`totalSize`, `totalQuotaBytesUsed`, `oldestCreatedTime`) automatically triggers recursive exploration.
 

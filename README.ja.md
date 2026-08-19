@@ -51,7 +51,7 @@ Google Drive API を利用するため、OAuth 2.0 の認証情報が必要で�
 
 1. Google Cloud Console でプロジェクトを作成
 2. **Google Drive API** を有効化
-3. **OAuth 2.0 クライアント ID（デスクトップアプリ）**を作成
+3. **OAuth 2.0 クライアント ID　(デスクトップアプリ)** を作成
 4. `client_secret.json` をダウンロード
 5. 以下の場所に配置
 
@@ -157,14 +157,21 @@ python gdls.py <FOLDER_ID> -Rj -o drive_data.json
 
 `--fields` では Google Drive API の標準フィールドに加えて、以下の独自フィールドを利用できます。
 
-| Field                 | Description           |
+| Field                 | Description |
 | --------------------- | --------------------- |
-| `permissions`         | `ls` 風のファイルタイプ・権限表示   |
-| `relativePath`        | ルートからの相対パス            |
-| `depth`               | フォルダ階層の深さ             |
-| `totalSize`           | 子孫アイテムを含むサイズ合計        |
-| `totalQuotaBytesUsed` | 子孫アイテムを含む容量使用量        |
-| `oldestCreatedTime`   | 子孫アイテムを含む最古の作成日時      |
+| `permissions`         | `ls` 風のファイルタイプ・権限表示 (例: `lrwx+`, `-rw-+`) |
+| `relativePath`        | 対象フォルダからの相対パス (同一アイテム名が許容されるため、一意ではないことに注意) |
+| `depth`               | フォルダ階層の深さ |
+| `itemCount`           | 子孫アイテムの数 |
+| `fileCount`           | 子孫ファイルの数 |
+| `folderCount`         | 子孫フォルダの数 |
+| `childItemCount`      | 直下にあるアイテムの数 |
+| `childFileCount`      | 直下にあるファイルの数 |
+| `childFolderCount`    | 直下にあるフォルダの数 |
+| `totalQuotaBytesUsed` | 子孫アイテムを含む容量使用量 |
+| `oldestCreatedTime`/`latestCreatedTime`   | 子孫アイテムを含む最古/最新の作成日時 |
+| `oldestModifiedTime`/`latestModifiedTime`   | 子孫アイテムを含む最古/最新の更新日時 |
+
 
 `totalSize`、`totalQuotaBytesUsed`、`oldestCreatedTime` などの集計フィールドを指定すると、必要に応じて自動的に子孫アイテムが探索されます。
 
