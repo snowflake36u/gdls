@@ -12,6 +12,7 @@ dependencies = [
 	"google-api-python-client",
 	"google-auth-oauthlib",
 	"tqdm",
+	"progress-reporter @ git+https://github.com/snowflake36u/progress-reporter.git@main",
 ]
 
 [project.scripts]

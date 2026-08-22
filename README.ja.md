@@ -22,6 +22,8 @@ Google Drive のフォルダ構造を `ls` コマンド風に一覧表示する�
 - Python 3.10+
 - Google Drive API
 - `pyproject.toml` で管理される依存パッケージ
+  - progress-reporter (https://github.com/snowflake36u/progress-reporter.git)
+  - and others
 
 ## インストール方法
 
