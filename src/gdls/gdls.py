@@ -267,6 +267,21 @@ class GdlsController:
 		)
 		is_single_item_mode = item_mode or describe_mode
 		
+		# ソートキーが指定されている場合、取得対象のフィールドに含まれる有効なキーか検証する。
+		# 取得対象外のフィールドでソートを試みると、データが存在せず意図した結果にならないため。
+		if sort_arg and not is_single_item_mode:
+			valid_sort_keys = set(output_fields + descendant_api_fields)
+			sort_keys = [k.strip() for k in sort_arg.split(',') if k.strip()]
+			for key_str in sort_keys:
+				actual_key = key_str
+				if key_str.lower().endswith(' desc'):
+					actual_key = key_str[:-5].strip()
+				elif key_str.lower().endswith(' asc'):
+					actual_key = key_str[:-4].strip()
+				
+				if actual_key not in valid_sort_keys:
+					raise ValueError(f"Invalid sort key: '{actual_key}'. Valid keys are: {', '.join(sorted(valid_sort_keys))}")
+		
 		logger = logging.getLogger(APP_NAME)
 		logger.info("Fetching data from Google Drive...")
 		
