@@ -19,7 +19,7 @@ from googleapiclient.discovery import Resource, build
 
 from progress_reporter import ProgressReporter, ProgressEvent, NullProgressReporter
 from progress_reporter.tqdm_reporter import TqdmProgressReporter
-from progress_reporter.scheduler import IntervalScheduler
+from progress_reporter.trigger import IntervalTrigger
 
 from .config import (
 	APP_NAME,
@@ -984,14 +984,14 @@ class ScanProgressReporter(TqdmProgressReporter):
 			disable=quiet,
 			file=sys.stderr,
 		)
-		self.subtask_counter = IntervalScheduler(
+		self.subtask_trigger = IntervalTrigger(
 			step_interval=SCAN_PROGRESS_UPDATE_ITEM_INTERVAL,
 			time_interval=SCAN_PROGRESS_UPDATE_TIME_INTERVAL,
 		)
 	
 	def on_start(self, event: ProgressEvent) -> None:
 		"""初期化時に進捗バーと子孫数カウンタを初期状態へ戻します。"""
-		self.subtask_counter.reset()
+		self.subtask_trigger.reset()
 		super().on_start(event)
 	
 	def on_update(self, event: ProgressEvent) -> None:
@@ -1002,15 +1002,15 @@ class ScanProgressReporter(TqdmProgressReporter):
 				# 直下アイテムの処理イベント
 				pbar.update(event.n)
 				pbar.set_postfix_str(
-					f"descendants={self.subtask_counter.steps:,}", refresh=False,
+					f"descendants={self.subtask_trigger.steps:,}", refresh=False,
 				)
 			else:
 				# 子孫アイテムの処理イベント
 				
 				# 画面のちらつきや描画負荷を防ぐため、一定時間または一定件数ごとのみ進捗を描画する。
-				if self.subtask_counter.add(event.data.get('descendant_increment', 0)):
+				if self.subtask_trigger.step(event.data.get('descendant_increment', 0)):
 					pbar.set_postfix_str(
-						f"descendants={self.subtask_counter.steps:,}", refresh=False,
+						f"descendants={self.subtask_trigger.steps:,}", refresh=False,
 					)
 
 class GdlsController:
