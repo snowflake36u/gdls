@@ -246,6 +246,13 @@ Command-line options (`--client-secret`, `--token-file`) take precedence over en
 
 ## Troubleshooting
 
+### "command not found" or Command Not Recognized
+
+If `gdls` is not recognized as a command after installation, ensure that your Python script directory is included in your system's `PATH` environment variable.
+
+- **Windows**: `C:\Users\<User>\AppData\Local\Programs\Python\Python3x\Scripts\` (or `%APPDATA%\Python\Python3x\Scripts`)
+- **Linux / macOS**: `~/.local/bin`
+
 ### Missing Client Secret File
 
 Ensure `client_secret.json` is located in the appropriate directory.
