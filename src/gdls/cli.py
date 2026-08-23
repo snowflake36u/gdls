@@ -73,12 +73,18 @@ def parse_arguments() -> argparse.Namespace:
 	# 出力ファイル指定
 	parser.add_argument('-o', '--output', type=str,
 							  help="Output file path")
+	parser.add_argument(
+		'-O', '--output-format', default=None, choices=['tsv', 'csv', 'json'],
+		help="Output file format when writing with --output (default: tsv)",
+	)
 	parser.add_argument('-a', '--append', action='store_true',
 							  help="Append to existing output file")
 	
 	# 出力形式
-	parser.add_argument('-j', '--json', action='store_true',
-							  help="Output in JSON format (instead of TSV)")
+	parser.add_argument(
+		'-F', '--format', default='auto', choices=['auto', 'table', 'tsv', 'csv', 'json'],
+		help="Console output format (default: auto)",
+	)
 	
 	# 出力形式オプション
 	parser.add_argument('-H', '--no-header', action='store_true',
@@ -128,11 +134,17 @@ def validate_arguments(args: argparse.Namespace) -> None:
 	if args.append and not args.output:
 		raise ValueError("The '--append' option requires '--output'.")
 	
-	if args.no_header and args.json:
-		raise ValueError("The '--no-header' option can only be used with TSV output.")
+	if args.no_header and args.format == 'json':
+		raise ValueError("The '--no-header' option cannot be used with JSON stdout-format.")
+	
+	if args.no_header and args.output_format == 'json':
+		raise ValueError("The '--no-header' option cannot be used with JSON output-format.")
 	
 	if args.describe and args.no_header:
 		raise ValueError("The '--no-header' option cannot be used with '--describe'.")
+	
+	if args.output is None and args.output_format is not None:
+		raise ValueError("The '--output-format' option is valid only when '--output' is specified.")
 	
 	if (args.item or args.describe) and args.recursive:
 		raise ValueError("The '--item'/'--describe' options are exclusive with '--recursive'.")
@@ -174,7 +186,7 @@ def main() -> int:
 	else:
 		output_fields = parse_fields_arg(args.fields)
 	
-	output_format = 'json' if args.json else 'tsv'
+	output_format = args.output_format or 'tsv'
 	
 	try:
 		service = get_drive_service(
@@ -209,9 +221,10 @@ def main() -> int:
 			item_mode=args.item,
 			describe_mode=args.describe,
 			recursive_mode=args.recursive,
-			output_format=output_format,
 			no_header=args.no_header,
 			output=args.output,
+			output_format=output_format,
+			stdout_format=args.format,
 			append_mode=args.append,
 			quiet=args.quiet,
 			sort_arg=args.sort,

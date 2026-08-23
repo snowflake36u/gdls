@@ -218,6 +218,7 @@ class GdlsController:
 			recursive_mode: bool = False,
 			output: str | None = None,
 			output_format: str = 'tsv',
+			stdout_format: str = 'auto',
 			no_header: bool = False,
 			append_mode: bool = False,
 			quiet: bool = False,
@@ -233,7 +234,8 @@ class GdlsController:
 			describe_mode: 対象アイテムを詳細表示するかどうか。
 			recursive_mode: 子孫要素まで再帰的に取得するかどうか。
 			output: 出力ファイル名。
-			output_format: 出力形式。
+			stdout_format: 標準出力の形式。'auto', 'grid', 'table', 'tsv', 'csv', 'json'。
+			output_format: 出力ファイルの形式。'tsv', 'csv', 'json'。
 			no_header: TSVのヘッダーを抑制するかどうか。
 			append_mode: 既存ファイルに追記するかどうか。
 			quiet: 進捗バーと非エラーログを抑制するかどうか。
@@ -245,8 +247,10 @@ class GdlsController:
 		if append_mode and not output:
 			raise ValueError("append=True cannot be specified when output is None.")
 		
-		if no_header and output_format == 'json':
-			raise ValueError("no_header=True cannot be specified when output_format='json'.")
+		if no_header and (stdout_format == 'json' or output_format == 'json'):
+			raise ValueError(
+				"no_header=True cannot be specified when JSON output is enabled."
+			)
 		
 		if no_header and describe_mode:
 			raise ValueError("no_header=True cannot be specified when describe_mode=True.")
@@ -304,6 +308,7 @@ class GdlsController:
 			records_to_output=records_to_output,
 			output_fields=output_fields,
 			describe_mode=describe_mode,
+			stdout_format=stdout_format,
 			output_format=output_format,
 			output_path=output_path,
 			append_mode=append_mode,
@@ -417,6 +422,7 @@ class GdlsController:
 			records_to_output: list[DriveItem],
 			output_fields: list[str],
 			describe_mode: bool,
+			stdout_format: str,
 			output_format: str,
 			output_path: Path | None,
 			append_mode: bool,
@@ -434,26 +440,60 @@ class GdlsController:
 			no_header: TSV出力においてヘッダーを抑制するかどうか。
 		"""
 		if describe_mode:
-			if records_to_output:
-				self._exporter.export_describe(
-					records_to_output[0],
-					output_path,
-					use_json=(output_format == 'json'),
-					append=append_mode,
+			if stdout_format not in ('auto', 'json'):
+				raise ValueError(
+					"stdout_format must be 'auto' or 'json' in describe mode."
 				)
-		
-		elif output_format == 'json':
-			self._exporter.export_json(
-				records=records_to_output,
-				output=output_path,
+			if output_format not in ('tsv', 'json'):
+				raise ValueError(
+					"output_format must be 'tsv' or 'json' in describe mode."
+				)
+			
+			if not records_to_output:
+				return
+			
+			if output_format == 'json' or stdout_format == 'json':
+				# describe_mode の既存JSON表現は、単一レコードをオブジェクトとしてstdoutへ、
+				# ファイル追記時のみ配列として保持する仕様を維持する。
+				if stdout_format == 'json':
+					self._exporter.export_describe(
+						records_to_output[0],
+						None,
+						use_json=True,
+						append=False,
+					)
+				else:
+					self._exporter.export_describe(
+						records_to_output[0],
+						None,
+						use_json=False,
+						append=False,
+					)
+				if output_path:
+					self._exporter.export_describe(
+						records_to_output[0],
+						output_path,
+						use_json=(output_format == 'json'),
+						append=append_mode,
+					)
+				return
+			
+			# 人間向けdescribeをstdoutとファイルへ出力。
+			self._exporter.export_describe(
+				records_to_output[0],
+				output_path,
+				use_json=False,
 				append=append_mode,
 			)
+			return
 		
-		else:
-			self._exporter.export_tsv(
-				records=records_to_output,
-				fields=output_fields,
-				output=output_path,
-				append=append_mode,
-				no_header=no_header,
-			)
+		# 非 describe_mode での標準出力・ファイル出力を実行する
+		self._exporter.export(
+			records=records_to_output,
+			fields=output_fields,
+			stdout_format=stdout_format,
+			output=output_path,
+			output_format=output_format,
+			append=append_mode,
+			no_header=no_header,
+		)

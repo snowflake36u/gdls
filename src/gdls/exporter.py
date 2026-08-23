@@ -109,9 +109,14 @@ class OutputFormatter:
 		return '\n'.join(lines)
 
 class RecordExporter:
-	"""取得・構築されたレコードを各種形式（TSV, JSON, 詳細形式）で出力するクラス。"""
+	"""取得・構築されたレコードを各種形式（TSV, CSV, JSON, 詳細形式）で出力するクラス。"""
 	
 	def __init__(self, formatter: OutputFormatter | None = None) -> None:
+		"""出力に利用する整形ロジックを初期化する。
+
+		Args:
+			formatter: 文字列整形や色付けを担うユーティリティ。
+		"""
 		self._formatter = formatter or OutputFormatter()
 	
 	def export_grid(self, records: list[DriveItem]) -> None:
@@ -148,46 +153,82 @@ class RecordExporter:
 						line_parts.append(formatted_name)
 			sys.stdout.write(''.join(line_parts) + '\n')
 	
-	def export_tsv(
+	def export(
 			self,
 			records: list[DriveItem],
 			fields: list[str],
-			output: Path | None,
+			stdout_format: str = 'auto',
+			output: Path | None = None,
+			output_format: str = 'tsv',
 			append: bool = False,
 			no_header: bool = False,
 	) -> None:
-		"""レコードを標準出力と指定ファイルにTSV形式またはグリッド形式で出力する。
+		"""レコードを標準出力と指定ファイルへ、それぞれ指定形式で出力する。
 
 		Args:
 			records: 書き込むレコード一覧。
 			fields: 出力対象のフィールド一覧。
+			stdout_format: 標準出力の形式。'auto', 'grid', 'table', 'tsv', 'csv', 'json'。
 			output: 出力ファイルパス。Noneの場合は標準出力のみ。
+			output_format: ファイルの形式。'tsv', 'csv', 'json'。
 			append: 既存ファイルへの追記を行うかどうか。
-			no_header: ヘッダー行を出力しないかどうか。
+			no_header: TSV/CSV出力においてヘッダーを抑制するかどうか。
 		"""
+		stdout_format = self._resolve_stdout_format(stdout_format, fields)
+		self._validate_format(stdout_format, output_format)
+		if stdout_format == 'json' and no_header:
+			raise ValueError("no_header cannot be specified when stdout_format='json'.")
+		if output_format == 'json' and no_header:
+			# JSONにはヘッダーという概念がないため、従来仕様と同様に拒否する。
+			raise ValueError("no_header cannot be specified when output_format='json'.")
+		
 		# 複雑なオブジェクト型の値を文字列化してフォーマット崩れを防ぐ
 		formatted_records = [
 			{ k: self._formatter.format_cell_for_tsv(v) for k, v in record.items() }
 			for record in records
 		]
 		
-		# 実行環境がコンソールの場合は視認性を考慮したフォーマットを行い、
-		# パイプやリダイレクトの場合は機械処理に適したTSVを出力する。
-		if sys.stdout.isatty():
-			if fields == ['name']:
-				# デフォルト表示（名前のみ）の場合は端末幅に合わせたグリッド表示を行う
-				self.export_grid(records)
-			else:
-				self._export_tty_tsv(records, formatted_records, fields, no_header)
-		else:
-			self._export_csv_stream(sys.stdout, formatted_records, fields, no_header)
+		self._export_to_stdout(
+			stdout_format,
+			records,
+			formatted_records,
+			fields,
+			no_header,
+		)
 		
-		if not output:
-			return
-		
-		self._export_to_file(output, formatted_records, fields, append, no_header)
+		if output:
+			self._export_to_file(
+				output_format,
+				output,
+				records,
+				formatted_records,
+				fields,
+				append,
+				no_header,
+			)
 	
-	def _export_tty_tsv(
+	@staticmethod
+	def _validate_format(stdout_format: str, output_format: str) -> None:
+		if stdout_format not in { 'auto', 'grid', 'table', 'tsv', 'csv', 'json' }:
+			raise ValueError(
+				f"Invalid stdout_format: '{stdout_format}'. "
+				"Valid formats are: auto, grid, table, tsv, csv, json."
+			)
+		if output_format not in { 'tsv', 'csv', 'json' }:
+			raise ValueError(
+				f"Invalid output_format: '{output_format}'. "
+				"Valid formats are: tsv, csv, json."
+			)
+	
+	@staticmethod
+	def _resolve_stdout_format(stdout_format: str, fields: list[str]) -> str:
+		if stdout_format != 'auto':
+			return stdout_format
+		if not sys.stdout.isatty():
+			return 'tsv'
+		return 'grid' if fields == ['name'] else 'table'
+	
+	def _export_tty_table(
 			self,
 			records: list[DriveItem],
 			formatted_records: list[dict[str, str]],
@@ -231,37 +272,39 @@ class RecordExporter:
 			formatted_records: list[dict[str, str]],
 			fields: list[str],
 			no_header: bool,
+			delimiter: str = '\t',
 	) -> None:
-		"""指定されたストリームに対して機械処理用のTSVを出力する。"""
+		"""指定されたストリームに対して純粋なデリミタ区切りデータを出力する。"""
 		# extrasaction='ignore' を指定し、_mimeType などの内部キーが出力されることを防ぐ
 		writer = csv.DictWriter(
-			stream, fieldnames=fields, delimiter='\t', extrasaction='ignore',
+			stream, fieldnames=fields, delimiter=delimiter, extrasaction='ignore',
 			lineterminator='\n'
 		)
 		if not no_header:
 			writer.writeheader()
 		writer.writerows(formatted_records)
 	
-	def _export_to_file(
+	def _export_csv_to_file(
 			self,
 			output: Path,
 			formatted_records: list[dict[str, str]],
 			fields: list[str],
 			append: bool,
 			no_header: bool,
+			delimiter: str = '\t',
 	) -> None:
-		"""ファイルに対してTSVを出力する。"""
+		"""ファイルに対してデリミタ区切りデータを出力する。"""
 		output_exists = output.exists()
 		output_has_content = output_exists and output.stat().st_size > 0
 		write_mode = 'a' if append else 'w'
 		
 		with open(output, write_mode, encoding='utf-8', newline='') as f:
 			file_writer = csv.DictWriter(
-				f, fieldnames=fields, delimiter='\t', extrasaction='ignore'
+				f, fieldnames=fields, delimiter=delimiter, extrasaction='ignore'
 			)
 			
 			# 追記対象が存在しない、または空ファイルの場合は
-			# 新しいTSVとしてヘッダーを書き出す。
+			# 新しいファイルとしてヘッダーを書き出す。
 			should_write_header = not no_header and (not append or not output_has_content)
 			
 			if should_write_header:
@@ -269,51 +312,74 @@ class RecordExporter:
 			
 			file_writer.writerows(formatted_records)
 	
-	def export_json(
+	def _export_to_stdout(
 			self,
+			stdout_format: str,
 			records: list[DriveItem],
-			output: Path | None,
-			append: bool = False,
+			formatted_records: list[dict[str, str]],
+			fields: list[str],
+			no_header: bool,
 	) -> None:
-		"""レコードを標準出力および指定ファイルへJSON形式で出力する。
-
-		Args:
-			records: 書き込むレコード一覧。
-			output: 出力ファイルパス。Noneの場合は標準出力のみ。
-			append: 既存JSON配列にレコードを追加するかどうか。
-
-		Raises:
-			ValueError: 追記対象のJSONが配列ではない場合。
-			json.JSONDecodeError: 追記対象のJSONを解析できない場合。
-		"""
-		# JSONに出力しない内部キーを除外する
+		if stdout_format == 'grid':
+			self.export_grid(records)
+		elif stdout_format == 'table':
+			self._export_tty_table(records, formatted_records, fields, no_header)
+		elif stdout_format == 'tsv':
+			self._export_csv_stream(
+				sys.stdout, formatted_records, fields, no_header, delimiter='\t'
+			)
+		elif stdout_format == 'csv':
+			self._export_csv_stream(
+				sys.stdout, formatted_records, fields, no_header, delimiter=','
+			)
+		elif stdout_format == 'json':
+			self._export_json_stream(records)
+	
+	def _export_to_file(
+			self,
+			output_format: str,
+			output: Path,
+			records: list[DriveItem],
+			formatted_records: list[dict[str, str]],
+			fields: list[str],
+			append: bool,
+			no_header: bool,
+	) -> None:
+		if output_format == 'json':
+			self._export_json_file(output, records, append)
+		elif output_format == 'csv':
+			self._export_csv_to_file(
+				output, formatted_records, fields, append, no_header, delimiter=','
+			)
+		else:
+			self._export_csv_to_file(
+				output, formatted_records, fields, append, no_header, delimiter='\t'
+			)
+	
+	@staticmethod
+	def _export_json_stream(records: list[DriveItem]) -> None:
 		clean_records = [
-			{ k: v for k, v in r.items() if not k.startswith('_') }
-			for r in records
+			{ k: v for k, v in record.items() if not k.startswith('_') }
+			for record in records
 		]
-		
-		# 標準出力では現在取得したレコードだけを出力する。
-		json_data = json.dumps(clean_records, ensure_ascii=False, indent=2)
-		sys.stdout.write(json_data + '\n')
-		
-		if not output:
-			return
-		
+		sys.stdout.write(json.dumps(clean_records, ensure_ascii=False, indent=2) + '\n')
+	
+	@staticmethod
+	def _export_json_file(
+			output: Path,
+			records: list[DriveItem],
+			append: bool,
+	) -> None:
+		clean_records = [
+			{ k: v for k, v in record.items() if not k.startswith('_') }
+			for record in records
+		]
 		records_to_write = clean_records
-		
 		if append and output.exists() and output.stat().st_size > 0:
-			# 新規リストの生成に伴うメモリ負荷を避けるため、既存リストに直接拡張する。
-			records_to_write = self._load_json_array(output)
+			records_to_write = RecordExporter._load_json_array(output)
 			records_to_write.extend(clean_records)
-		
-		file_json_data = json.dumps(
-			records_to_write,
-			ensure_ascii=False,
-			indent=2,
-		)
-		
 		with open(output, 'w', encoding='utf-8') as file:
-			file.write(file_json_data + '\n')
+			file.write(json.dumps(records_to_write, ensure_ascii=False, indent=2) + '\n')
 	
 	def export_describe(
 			self,
@@ -323,7 +389,7 @@ class RecordExporter:
 			append: bool = False,
 	) -> None:
 		"""単一アイテムの情報を人間向け形式またはJSONで出力する。
-
+		
 		Args:
 			record: 出力対象レコード。
 			output: 出力ファイルパス。
@@ -334,27 +400,23 @@ class RecordExporter:
 		
 		if use_json:
 			records_to_write = [clean_record]
-			
-			if append and output and output.exists():
-				if output.stat().st_size > 0:
-					records_to_write = self._load_json_array(output) + [clean_record]
-			
+			if append and output and output.exists() and output.stat().st_size > 0:
+				records_to_write = self._load_json_array(output) + [clean_record]
 			output_str = json.dumps(
 				records_to_write if append else clean_record,
 				ensure_ascii=False,
 				indent=2,
 			)
-			
 			sys.stdout.write(output_str + '\n')
-			
 			if output:
 				with open(output, 'w', encoding='utf-8') as f:
 					f.write(output_str + '\n')
-			
 			return
 		
 		# 標準出力に出力 (着色・列揃えあり)
-		stdout_str = self._formatter.format_describe_record(clean_record, colorize=sys.stdout.isatty())
+		stdout_str = self._formatter.format_describe_record(
+			clean_record, colorize=sys.stdout.isatty()
+		)
 		sys.stdout.write(stdout_str + '\n')
 		
 		if not output:
@@ -362,12 +424,9 @@ class RecordExporter:
 		
 		# ファイル出力
 		file_str = self._formatter.format_describe_record(clean_record, colorize=False)
-		
 		if append and output.exists() and output.stat().st_size > 0:
 			file_str = '\n' + file_str
-		
 		write_mode = 'a' if append else 'w'
-		
 		with open(output, write_mode, encoding='utf-8') as file:
 			file.write(file_str + '\n')
 	
