@@ -2,7 +2,7 @@
 
 A command-line tool that lists Google Drive folder structures in an `ls`-like format.
 
-It displays file and folder names, sizes, modification dates, owners, and more. It supports output in TSV or JSON format, recursive exploration, shared drives, and aggregated directory metrics.
+It displays file and folder names, sizes, modification dates, owners, and more. It supports TSV/CSV/JSON output on stdout or files, recursive exploration, shared drives, and aggregated directory metrics.
 
 ## Features
 
@@ -10,7 +10,7 @@ It displays file and folder names, sizes, modification dates, owners, and more. 
 - Support for both standard Google Drives and Shared Drives
 - Flexible selection of file/folder output fields
 - Recursive item enumeration and data aggregation
-- Export to TSV and JSON formats
+- Export to TSV, CSV and JSON formats
 - Sorting capabilities for output results
 - Auto-aligned table format and color-coded output in terminal
 - Pipeline-friendly standard output (for `stdout`)
@@ -71,7 +71,7 @@ You can also customize the credential paths using the `--client-secret` and `--t
 ### Basic Usage
 
 ```bash
-python gdls.py <FOLDER_ID>
+gdls <FOLDER_ID>
 ```
 
 Lists items **directly inside** the specified folder.
@@ -79,71 +79,84 @@ Lists items **directly inside** the specified folder.
 You can specify a folder ID, a Google Drive folder URL, or a file preview URL:
 
 ```bash
-python gdls.py 1ABC123xyzABC123xyzABC123xyz
-python gdls.py https://drive.google.com/drive/folders/1ABC123xyzABC123xyzABC123xyz
-python gdls.py root
-python gdls.py /
+gdls 1ABC123xyzABC123xyzABC123xyz
+gdls https://drive.google.com/drive/folders/1ABC123xyzABC123xyzABC123xyz
+gdls root
+gdls /
 ```
 
-By default, item names are output in TSV format.
+By default, item names are output in TSV format on stdout. If `-o/--output` is specified without `-O/--output-format`, the file is written as TSV by default.
 
 ### Common Options
 
 ```bash
 # Display detailed information (permissions, owners, size, modifiedTime, id, name)
-python gdls.py <FOLDER_ID> -l
+gdls <FOLDER_ID> -l
 
 # Display information about the folder itself
-python gdls.py <FOLDER_ID> -i
+gdls <FOLDER_ID> -i
 
 # Display detailed info in human-readable format
-python gdls.py <FOLDER_ID> -d
+gdls <FOLDER_ID> -d
 
 # Specify output fields
-python gdls.py <FOLDER_ID> -f "id,name,size,createdTime,modifiedTime"
+gdls <FOLDER_ID> -f "id,name,size,createdTime,modifiedTime"
 
 # Recursively list files and folders
-python gdls.py <FOLDER_ID> -R
+gdls <FOLDER_ID> -R
 
-# Output in JSON format
-python gdls.py <FOLDER_ID> -j
+# Output to stdout in JSON format
+gdls <FOLDER_ID> -R -F json
+
+# Output to a file in JSON format
+gdls <FOLDER_ID> -R -o drive_data.json -O json
 
 # Output to a file
-python gdls.py <FOLDER_ID> -l -o output.tsv
+gdls <FOLDER_ID> -l -o output.tsv
 
 # Append to an existing file
-python gdls.py <FOLDER_ID_1> -l -o combined.tsv
-python gdls.py <FOLDER_ID_2> -l -o combined.tsv --append --no-header
+gdls <FOLDER_ID_1> -l -o combined.tsv
+gdls <FOLDER_ID_2> -l -o combined.tsv --append --no-header
 
 # Sort results (use ' desc' suffix for descending order)
-python gdls.py <FOLDER_ID> -R -f "name,size" -S "size desc"
+gdls <FOLDER_ID> -R -f "name,size" -S "size desc"
 
 # Pipe processing (use -q / --quiet to suppress logs and progress)
-python gdls.py <FOLDER_ID> -R -q | grep "\.pdf$"
+gdls <FOLDER_ID> -R -q | grep "\.pdf$"
 ```
 
 ## Output Formats
 
 ### TSV
 
-TSV is the default output format.
+TSV is the default output format on stdout and for `-o/--output` files when no explicit file format is requested.
 
 When printed directly to the terminal, output is rendered as an auto-aligned table. When redirected to a file or passed through a pipe, it automatically outputs raw tab-separated values.
 
 ```bash
-python gdls.py <FOLDER_ID> -l
-python gdls.py <FOLDER_ID> -l > files.tsv
+gdls <FOLDER_ID> -l
+gdls <FOLDER_ID> -l > files.tsv
 ```
 
 Use `--no-header` to omit the column header row.
 
-### JSON (`-j` / `--json`)
+### CSV and JSON
 
 ```bash
-python gdls.py <FOLDER_ID> -Rj -o drive_data.json
+# CSV on stdout
+gdls <FOLDER_ID> -F csv
+
+# CSV written to a file
+gdls <FOLDER_ID> -o drive_data.csv -O csv
+
+# JSON on stdout
+gdls <FOLDER_ID> -F json
+
+# JSON written to a file
+gdls <FOLDER_ID> -o drive_data.json -O json
 ```
 
-Ideal for programmatic data processing and analysis.
+These formats are ideal for programmatic data processing and analysis.
 
 ### Terminal Display
 
@@ -188,10 +201,11 @@ Specifying aggregated fields (`totalSize`, `totalQuotaBytesUsed`, `oldestCreated
 | `-l`, `--long`      | Display standard attributes in long format                 |
 | `-f`, `--fields`    | Specify output fields                                      |
 | `-S`, `--sort`      | Sort output by specified fields                            |
+| `-F`, `--format`    | Console output format (`auto`, `table`, `tsv`, `csv`, `json`) |
+| `-H`, `--no-header` | Omit header row in TSV/CSV output                         |
 | `-o`, `--output`    | Output file path                                           |
+| `-O`, `--output-format` | File format for `--output` (`tsv`, `csv`, `json`; default: `tsv`) |
 | `-a`, `--append`    | Append output to an existing file                          |
-| `-j`, `--json`      | Output in JSON format                                      |
-| `-H`, `--no-header`       | Omit header row in TSV output                              |
 | `--log-level`       | Set logging verbosity level                                |
 | `-q`, `--quiet`     | Suppress progress bar and non-error logs                  |
 | `--client-secret`   | Path to `client_secret.json`                               |
@@ -203,7 +217,7 @@ Specifying aggregated fields (`totalSize`, `totalQuotaBytesUsed`, `oldestCreated
 ### Get total size within a folder
 
 ```bash
-python gdls.py <FOLDER_ID> -i -f "id,name,totalSize"
+gdls <FOLDER_ID> -i -f "id,name,totalSize"
 ```
 
 ## Environment Variables
@@ -216,7 +230,7 @@ You can define custom paths for authentication files using environment variables
 $env:GDLS_CLIENT_SECRET_FILE="C:\custom\path\client_secret.json"
 $env:GDLS_TOKEN_FILE="C:\custom\path\token.json"
 
-python gdls.py <FOLDER_ID>
+gdls <FOLDER_ID>
 ```
 
 ### macOS / Linux
@@ -225,7 +239,7 @@ python gdls.py <FOLDER_ID>
 export GDLS_CLIENT_SECRET_FILE="/custom/path/client_secret.json"
 export GDLS_TOKEN_FILE="/custom/path/token.json"
 
-python gdls.py <FOLDER_ID>
+gdls <FOLDER_ID>
 ```
 
 Command-line options (`--client-secret`, `--token-file`) take precedence over environment variables.
@@ -239,7 +253,7 @@ Ensure `client_secret.json` is located in the appropriate directory.
 Alternatively, explicitly pass the path using the CLI option:
 
 ```bash
-python gdls.py <FOLDER_ID> --client-secret /path/to/client_secret.json
+gdls <FOLDER_ID> --client-secret /path/to/client_secret.json
 ```
 
 ### Authentication Errors (e.g., `invalid_grant`)
@@ -258,7 +272,7 @@ Remove-Item "$env:APPDATA\SnowyTools\GDLS\token.json" -ErrorAction SilentlyConti
 rm -f ~/.config/SnowyTools/GDLS/token.json
 ```
 
-Then run `gdls.py` again.
+Then run `gdls` again.
 
 ### Folder not Found
 
