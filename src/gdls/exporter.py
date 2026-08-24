@@ -158,7 +158,7 @@ class RecordExporter:
 			records: list[DriveItem],
 			fields: list[str],
 			stdout_format: str = 'auto',
-			output: Path | None = None,
+			output_path: Path | None = None,
 			output_format: str = 'tsv',
 			append: bool = False,
 			no_header: bool = False,
@@ -169,7 +169,7 @@ class RecordExporter:
 			records: 書き込むレコード一覧。
 			fields: 出力対象のフィールド一覧。
 			stdout_format: 標準出力の形式。'auto', 'grid', 'table', 'tsv', 'csv', 'json'。
-			output: 出力ファイルパス。Noneの場合は標準出力のみ。
+			output_path: 出力ファイルパス。Noneの場合は標準出力のみ。
 			output_format: ファイルの形式。'tsv', 'csv', 'json'。
 			append: 既存ファイルへの追記を行うかどうか。
 			no_header: TSV/CSV出力においてヘッダーを抑制するかどうか。
@@ -179,32 +179,47 @@ class RecordExporter:
 		if stdout_format == 'json' and no_header:
 			raise ValueError("no_header cannot be specified when stdout_format='json'.")
 		if output_format == 'json' and no_header:
-			# JSONにはヘッダーという概念がないため、従来仕様と同様に拒否する。
+			# JSONにはヘッダーという概念がないため拒否する
 			raise ValueError("no_header cannot be specified when output_format='json'.")
 		
-		# 複雑なオブジェクト型の値を文字列化してフォーマット崩れを防ぐ
-		formatted_records = [
-			{ k: self._formatter.format_cell_for_tsv(v) for k, v in record.items() }
-			for record in records
-		]
+		# TSV/CSV出力など、文字列化処理が必要なフォーマットが選ばれている場合のみ
+		# 事前にフォーマット済みレコードを生成して各出力系で共有する。
+		# 複雑なオブジェクト型の値を文字列化してフォーマット崩れを防ぐ目的がある。
+		formatted_records = None
+		if stdout_format in { 'grid', 'table', 'tsv', 'csv' } or (output_path and output_format in ('tsv', 'csv')):
+			formatted_records = [
+				{ k: self._formatter.format_cell_for_tsv(v) for k, v in record.items() }
+				for record in records
+			]
+		
+		# JSONフォーマットが選ばれている場合のみ、
+		# 指定されたフィールドのみを抽出した辞書群を一度だけ生成してキャッシュする。
+		# メモリ消費の削減と、複数回シリアライズ処理が行われることによる性能劣化を防ぐためである。
+		json_records = None
+		if stdout_format == 'json' or (output_path and output_format == 'json'):
+			json_records = [
+				{ k: v for k, v in record.items() if k in fields }
+				for record in records
+			]
 		
 		self._export_to_stdout(
-			stdout_format,
-			records,
-			formatted_records,
-			fields,
-			no_header,
+			frmt=stdout_format,
+			records=records,
+			formatted_records=formatted_records,
+			json_records=json_records,
+			fields=fields,
+			no_header=no_header,
 		)
 		
-		if output:
+		if output_path:
 			self._export_to_file(
-				output_format,
-				output,
-				records,
-				formatted_records,
-				fields,
-				append,
-				no_header,
+				frmt=output_format,
+				path=output_path,
+				formatted_records=formatted_records,
+				json_records=json_records,
+				fields=fields,
+				no_header=no_header,
+				append=append,
 			)
 	
 	@staticmethod
@@ -314,70 +329,63 @@ class RecordExporter:
 	
 	def _export_to_stdout(
 			self,
-			stdout_format: str,
+			frmt: str,
 			records: list[DriveItem],
 			formatted_records: list[dict[str, str]],
+			json_records: list[dict[str, Any]],
 			fields: list[str],
 			no_header: bool,
 	) -> None:
-		if stdout_format == 'grid':
+		if frmt == 'grid':
 			self.export_grid(records)
-		elif stdout_format == 'table':
+		elif frmt == 'table':
 			self._export_tty_table(records, formatted_records, fields, no_header)
-		elif stdout_format == 'tsv':
+		elif frmt == 'tsv':
 			self._export_csv_stream(
 				sys.stdout, formatted_records, fields, no_header, delimiter='\t'
 			)
-		elif stdout_format == 'csv':
+		elif frmt == 'csv':
 			self._export_csv_stream(
 				sys.stdout, formatted_records, fields, no_header, delimiter=','
 			)
-		elif stdout_format == 'json':
-			self._export_json_stream(records)
+		elif frmt == 'json':
+			self._export_json_stream(json_records)
 	
 	def _export_to_file(
 			self,
-			output_format: str,
-			output: Path,
-			records: list[DriveItem],
+			frmt: str,
+			path: Path,
 			formatted_records: list[dict[str, str]],
+			json_records: list[dict[str, Any]],
 			fields: list[str],
 			append: bool,
 			no_header: bool,
 	) -> None:
-		if output_format == 'json':
-			self._export_json_file(output, records, append)
-		elif output_format == 'csv':
+		if frmt == 'json':
+			self._export_json_file(path, json_records, append)
+		elif frmt == 'csv':
 			self._export_csv_to_file(
-				output, formatted_records, fields, append, no_header, delimiter=','
+				path, formatted_records, fields, append, no_header, delimiter=','
 			)
 		else:
 			self._export_csv_to_file(
-				output, formatted_records, fields, append, no_header, delimiter='\t'
+				path, formatted_records, fields, append, no_header, delimiter='\t'
 			)
 	
 	@staticmethod
-	def _export_json_stream(records: list[DriveItem]) -> None:
-		clean_records = [
-			{ k: v for k, v in record.items() if not k.startswith('_') }
-			for record in records
-		]
-		sys.stdout.write(json.dumps(clean_records, ensure_ascii=False, indent=2) + '\n')
+	def _export_json_stream(json_records: list[dict[str, Any]]) -> None:
+		sys.stdout.write(json.dumps(json_records, ensure_ascii=False, indent=2) + '\n')
 	
 	@staticmethod
 	def _export_json_file(
 			output: Path,
-			records: list[DriveItem],
+			json_records: list[dict[str, Any]],
 			append: bool,
 	) -> None:
-		clean_records = [
-			{ k: v for k, v in record.items() if not k.startswith('_') }
-			for record in records
-		]
-		records_to_write = clean_records
+		records_to_write = json_records
 		if append and output.exists() and output.stat().st_size > 0:
 			records_to_write = RecordExporter._load_json_array(output)
-			records_to_write.extend(clean_records)
+			records_to_write.extend(json_records)
 		with open(output, 'w', encoding='utf-8') as file:
 			file.write(json.dumps(records_to_write, ensure_ascii=False, indent=2) + '\n')
 	

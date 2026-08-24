@@ -492,7 +492,7 @@ class GdlsController:
 			records=records_to_output,
 			fields=output_fields,
 			stdout_format=stdout_format,
-			output=output_path,
+			output_path=output_path,
 			output_format=output_format,
 			append=append_mode,
 			no_header=no_header,
