@@ -173,7 +173,9 @@ class ScanProgressReporter(TqdmProgressReporter):
 	def on_update(self, event: ProgressEvent) -> None:
 		"""直下アイテムと子孫アイテムの進捗を表示へ反映します。"""
 		with self._lock:
-			pbar = self.pbar(event)
+			pbar = self._pbar
+			if pbar is None:
+				return
 			if event.n != 0:
 				# 直下アイテムの処理イベント
 				pbar.update(event.n)
@@ -182,7 +184,6 @@ class ScanProgressReporter(TqdmProgressReporter):
 				)
 			else:
 				# 子孫アイテムの処理イベント
-				
 				# 画面のちらつきや描画負荷を防ぐため、一定時間または一定件数ごとのみ進捗を描画する。
 				if self.subtask_trigger.step(event.data.get('descendant_increment', 0)):
 					pbar.set_postfix_str(
