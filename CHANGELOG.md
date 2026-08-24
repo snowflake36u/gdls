@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.4.1 (2026-08-25)
+
+### Bug Fixes
+
+- Enable progress bar updates for descendant count
+  ([`f03c6a1`](https://github.com/snowflake36u/gdls/commit/f03c6a10ada1eeea9ab926ae0fc33b5b699e416b))
+
+
 ## v0.4.0 (2026-08-25)
 
 ### Bug Fixes
