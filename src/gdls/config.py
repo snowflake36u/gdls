@@ -3,7 +3,7 @@ from pathlib import Path
 import platform
 
 APP_GROUP_NAME = "SnowyTools"
-APP_NAME = "GDLS"
+APP_NAME = "gdls"
 
 def get_app_data_dir():
 	"""OS別のアプリデータディレクトリを取得
