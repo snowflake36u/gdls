@@ -187,7 +187,7 @@ class ScanProgressReporter(TqdmProgressReporter):
 				# 画面のちらつきや描画負荷を防ぐため、一定時間または一定件数ごとのみ進捗を描画する。
 				if self.subtask_trigger.step(event.data.get('descendant_increment', 0)):
 					pbar.set_postfix_str(
-						f"descendants={self.subtask_trigger.steps:,}", refresh=False,
+						f"descendants={self.subtask_trigger.steps:,}", refresh=True,
 					)
 
 class GdlsController:
