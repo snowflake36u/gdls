@@ -23,3 +23,13 @@ package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.semantic_release]
+version_variables = [
+	"src/gdls/__main__.py:__version__", # __main__.py内のバージョン変数を更新
+]
+version_toml = [
+	"pyproject.toml:project.version", # pyproject.toml内のバージョンを更新
+]
+branch = "main"                             # 対象ブランチ
+build_command = ""
