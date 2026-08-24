@@ -217,6 +217,7 @@ class GdlsController:
 			item_mode: bool = False,
 			describe_mode: bool = False,
 			recursive_mode: bool = False,
+			max_depth: int | None = None,
 			output: str | None = None,
 			output_format: str = 'tsv',
 			stdout_format: str = 'auto',
@@ -234,6 +235,7 @@ class GdlsController:
 			item_mode: 対象アイテム自身のみを出力するかどうか。
 			describe_mode: 対象アイテムを詳細表示するかどうか。
 			recursive_mode: 子孫要素まで再帰的に取得するかどうか。
+			max_depth: 出力するアイテムの探索階層上限。
 			output: 出力ファイル名。
 			stdout_format: 標準出力の形式。'auto', 'grid', 'table', 'tsv', 'csv', 'json'。
 			output_format: 出力ファイルの形式。'tsv', 'csv', 'json'。
@@ -300,6 +302,7 @@ class GdlsController:
 			recursive_mode=recursive_mode,
 			needs_descendant_agg=needs_descendant_agg,
 			quiet=quiet,
+			max_depth=max_depth,
 		)
 		
 		if sort_arg and not is_single_item_mode:
@@ -331,6 +334,7 @@ class GdlsController:
 			recursive_mode: bool,
 			needs_descendant_agg: bool,
 			quiet: bool,
+			max_depth: int | None = None,
 	) -> list[DriveItem]:
 		"""データを取得・構築し、出力対象のレコードリストを生成する。
 
@@ -342,6 +346,7 @@ class GdlsController:
 			include_trashed: ゴミ箱のアイテムを含めるかどうか。
 			is_single_item_mode: 単一アイテム処理モードかどうか。
 			recursive_mode: 再帰探索モードかどうか。
+			max_depth: 出力するアイテムの探索階層上限。
 			needs_descendant_agg: 子孫集約が必要かどうか。
 			quiet: ログ・プログレスバーを抑制するかどうか。
 
@@ -383,6 +388,7 @@ class GdlsController:
 				include_trashed,
 				needs_descendant_agg=needs_descendant_agg,
 				reporter=reporter,
+				max_depth=max_depth if recursive_mode else None,
 			)
 			
 			records_to_output = all_records if recursive_mode else root_records

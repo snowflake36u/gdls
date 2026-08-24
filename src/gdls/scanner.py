@@ -211,14 +211,15 @@ class ItemTreeScanner:
 			include_trashed: bool = False,
 			needs_descendant_agg: bool = True,
 			reporter: ProgressReporter | None = None,
+			max_depth: int | None = None,
 	) -> tuple[list[DriveItem], list[DriveItem]]:
 		"""指定フォルダ配下のすべての要素を反復処理で全件取得し、
 		データの集約とレコード構築を行う。
-
+		
 		関数呼び出しのオーバーヘッド削減と、深くネストされたディレクトリ構造での
 		再帰呼び出し上限（RecursionError）を回避するため、内部的にスタック構造を
 		用いた深さ優先探索（DFS）アルゴリズムを採用している。
-
+		
 		Args:
 			root_folder_id: 起点フォルダID。
 			api_fields: APIから取得するフィールド。
@@ -226,7 +227,8 @@ class ItemTreeScanner:
 			include_trashed: ゴミ箱内の要素を含めるかどうか。
 			needs_descendant_agg: 子孫集約値を計算するかどうか。
 			reporter: 進捗表示を管理するリポータ。
-
+			max_depth: 探索して出力する階層の深さ上限。
+		
 		Returns:
 			構築済みレコードのリストと、直下アイテムのレコードのリストのタプル。
 		"""
@@ -254,12 +256,19 @@ class ItemTreeScanner:
 				child, output_fields,
 				relative_path=child_name, depth=child_depth,
 			)
-			records.append(child_record)
+			
+			if max_depth is None or child_depth <= max_depth:
+				records.append(child_record)
+			
 			records_by_id[child_id] = child_record
 			root_records.append(child_record)
 			parent_ids[child_id] = root_folder_id
 			
 			if not child_record.is_folder():
+				continue
+			
+			if max_depth is not None and not needs_descendant_agg and child_depth >= max_depth:
+				# 深さ制限に到達しており集約も不要な場合、子孫を走査しない
 				continue
 			
 			# === フォルダの場合は子孫要素を再帰的に探索する ===
@@ -312,13 +321,17 @@ class ItemTreeScanner:
 						desc, output_fields,
 						relative_path=relative_path, depth=desc_depth,
 					)
-					records.append(desc_record)
+					
+					if max_depth is None or desc_depth <= max_depth:
+						records.append(desc_record)
+					
 					records_by_id[desc['id']] = desc_record
 					parent_ids[desc['id']] = current_id
 					
 					if desc_record.is_folder():
-						# 子アイテムがフォルダの場合は、さらにその内部を走査するためスタックに積む（行きがけ処理）
-						stack.append((desc['id'], relative_path, desc_depth, False))
+						if max_depth is None or needs_descendant_agg or desc_depth < max_depth:
+							# 子アイテムがフォルダの場合は、さらにその内部を走査するためスタックに積む（行きがけ処理）
+							stack.append((desc['id'], relative_path, desc_depth, False))
 					elif needs_descendant_agg:
 						# 子アイテムがファイルで、集約が必要な場合は、自身の情報を親へ伝播させるため帰りがけ処理のみ積む
 						stack.append((desc['id'], relative_path, desc_depth, True))

@@ -196,11 +196,12 @@ Specifying aggregated fields (`totalSize`, `totalQuotaBytesUsed`, `oldestCreated
 | `target`            | Google Drive folder URL or ID                             |
 | `-R`, `--recursive` | Recursively list descendant items                          |
 | `-t`, `--include-trashed` | Include items in the trash                                 |
+| `-d`, `--depth` | Maximum depth of recursion when listing subfolders |
 | `-i`, `--item`      | Target the specified item/folder itself                    |
-| `-d`, `--describe`  | Display detailed item metadata in human-readable format    |
+| `-D`, `--describe`  | Display detailed item metadata in human-readable format    |
 | `-l`, `--long`      | Display standard attributes in long format                 |
 | `-f`, `--fields`    | Specify output fields                                      |
-| `-S`, `--sort`      | Sort output by specified fields                            |
+| `-s`, `--sort`      | Sort output by specified fields                            |
 | `-F`, `--format`    | Console output format (`auto`, `table`, `tsv`, `csv`, `json`) |
 | `-H`, `--no-header` | Omit header row in TSV/CSV output                         |
 | `-o`, `--output`    | Output file path                                           |

@@ -51,16 +51,18 @@ def parse_arguments() -> argparse.Namespace:
 							  help="Recursively list items in subfolders")
 	parser.add_argument('-t', '--include-trashed', action='store_true',
 							  help="Include trashed files in the calculation and output")
+	parser.add_argument('-d', '--depth', type=int,
+							  help="Limit the depth of recursion when listing subfolders")
 	
 	# 単一アイテムモード
 	item_group = parser.add_mutually_exclusive_group()
 	item_group.add_argument('-i', '--item', action='store_true',
 									help="Fetch and output information ONLY for the specified target file/folder itself")
-	item_group.add_argument('-d', '--describe', action='store_true',
+	item_group.add_argument('-D', '--describe', action='store_true',
 									help="Display detailed information for a single target item in a readable format")
 	
 	# 出力結果のソート
-	parser.add_argument('-S', '--sort', type=str,
+	parser.add_argument('-s', '--sort', type=str,
 							  help="Comma-separated list of keys to sort the output by (e.g., 'size desc, name')")
 	
 	# 出力属性の指定
@@ -148,6 +150,9 @@ def validate_arguments(args: argparse.Namespace) -> None:
 	
 	if (args.item or args.describe) and args.recursive:
 		raise ValueError("The '--item'/'--describe' options are exclusive with '--recursive'.")
+	
+	if args.depth and not args.recursive:
+		raise ValueError("The '--depth' option requires '--recursive'.")
 
 def main() -> int:
 	"""メイン処理を実行する。
@@ -205,7 +210,7 @@ def main() -> int:
 		logging.error("Operation cancelled by user.")
 		return 130
 	except Exception:
-		logging.error(f"An unexpected error occurred.")
+		logging.error("An unexpected error occurred.")
 		logging.error(
 			"Detailed exception information:",
 			exc_info=True,
@@ -221,6 +226,7 @@ def main() -> int:
 			item_mode=args.item,
 			describe_mode=args.describe,
 			recursive_mode=args.recursive,
+			max_depth=args.depth,
 			no_header=args.no_header,
 			output=args.output,
 			output_format=output_format,
@@ -233,7 +239,7 @@ def main() -> int:
 		logging.error("Operation cancelled by user.")
 		return 130
 	except Exception:
-		logging.error(f"Failed to retrieve Google Drive data.")
+		logging.error("Failed to retrieve Google Drive data.")
 		logging.error(
 			"Detailed exception information:",
 			exc_info=True,
