@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gdls"
-version = "0.2.0"
+version = "0.3.0"
 description = "Google Drive listing CLI"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,7 +26,7 @@ where = ["src"]
 
 [tool.semantic_release]
 version_variables = [
-	"src/gdls/__main__.py:__version__", # __main__.py内のバージョン変数を更新
+	"src/gdls/__init__.py:__version__", # __main__.py内のバージョン変数を更新
 ]
 version_toml = [
 	"pyproject.toml:project.version", # pyproject.toml内のバージョンを更新
