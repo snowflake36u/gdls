@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.5.0 (2026-08-25)
+
+### Features
+
+- Add relativeIdPath to item record fields
+  ([`40c83ad`](https://github.com/snowflake36u/gdls/commit/40c83ad77deae3a90d6920d6faa8adc490353744))
+
+### Testing
+
+- Add simple unit tests for drive ID extraction and argument validation
+  ([`dfc40b1`](https://github.com/snowflake36u/gdls/commit/dfc40b15f8489fbabd88dc2c6ac5f48b3b66227a))
+
+
 ## v0.4.1 (2026-08-25)
 
 ### Bug Fixes
