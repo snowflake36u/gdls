@@ -15,8 +15,17 @@ dependencies = [
 	"progress-reporter @ git+https://github.com/snowflake36u/progress-reporter.git@main",
 ]
 
+[project.optional-dependencies]
+dev = [
+	"pytest>=8.0",
+]
+
 [project.scripts]
 gdls = "gdls.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.setuptools]
 package-dir = { "" = "src" }
