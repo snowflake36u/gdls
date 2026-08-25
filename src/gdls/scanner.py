@@ -12,6 +12,7 @@ FIELD_API_DEPENDENCIES: dict[str, list[str]] = {
 	'totalSize': ['size'],
 	'totalQuotaBytesUsed': ['quotaBytesUsed'],
 	'relativePath': ['name'],
+	'relativeIdPath': ['id'],
 	'depth': [],
 	'permissions': ['mimeType', 'capabilities/canEdit', 'shared'],
 	'itemCount': ['mimeType'],
@@ -105,6 +106,7 @@ class ItemTreeScanner:
 			item: DriveItem,
 			fields: list[str],
 			relative_path: str | None = None,
+			relative_id_path: str | None = None,
 			depth: int = 0,
 	) -> DriveItem:
 		"""Google Driveアイテムのレコードを構築する。
@@ -115,6 +117,7 @@ class ItemTreeScanner:
 			item: APIから取得したアイテム。
 			fields: 出力対象のフィールド一覧。
 			relative_path: アイテムのルートからの相対パス。
+			relative_id_path: アイテムのルートからの相対IDパス。
 			depth: アイテムの階層深度。
 
 		Returns:
@@ -143,6 +146,8 @@ class ItemTreeScanner:
 					item[field] = 0
 				case 'relativePath':
 					item[field] = item.get('name', '') if relative_path is None else relative_path
+				case 'relativeIdPath':  # 追加
+					item[field] = item.get('id', '') if relative_id_path is None else relative_id_path
 				case 'depth':
 					item[field] = depth
 				case 'parents':
@@ -254,7 +259,7 @@ class ItemTreeScanner:
 			
 			child_record = self.build_record(
 				child, output_fields,
-				relative_path=child_name, depth=child_depth,
+				relative_path=child_name, relative_id_path=child_id, depth=child_depth,
 			)
 			
 			if max_depth is None or child_depth <= max_depth:
@@ -274,12 +279,12 @@ class ItemTreeScanner:
 			# === フォルダの場合は子孫要素を再帰的に探索する ===
 			
 			# 反復的な深さ優先探索のためのスタック構造。
-			# 要素のタプル: (要素ID, 親パス, 階層の深さ, 帰りがけフラグ)
+			# 要素のタプル: (要素ID, 親パス, 親IDパス, 階層の深さ, 帰りがけフラグ)
 			# 帰りがけフラグ(finalize)がTrueの場合、子孫の探索が完了した後の集約処理を行う。
-			stack = [(child_id, child_name, child_depth, False)]
+			stack = [(child_id, child_name, child_id, child_depth, False)]
 			
 			while stack:
-				current_id, parent_path, depth, finalize = stack.pop()
+				current_id, parent_path, parent_id_path, depth, finalize = stack.pop()
 				
 				if finalize:
 					# =====
@@ -308,18 +313,23 @@ class ItemTreeScanner:
 				if needs_descendant_agg:
 					# 自身についての帰りがけ処理（finalize=True）をスタックに積む。
 					# LIFO(後入れ先出し)のため、これから積まれる子ノードの処理が全て終わった後に実行される。
-					stack.append((current_id, parent_path, depth, True))
+					stack.append((current_id, parent_path, parent_id_path, depth, True))
 				
 				# 子ノードをスタックに積む。
 				# reversed() を使用することで、APIから取得した順序（元の配列順）でスタックから取り出せるようにする。
 				desc_depth = depth + 1
 				for desc in reversed(descendants):
 					desc_name = desc.get('name', '')
+					desc_id = desc['id']
+					
 					relative_path = f'{parent_path}/{desc_name}' if parent_path else desc_name
+					relative_id_path = f'{parent_id_path}/{desc_id}' if parent_id_path else desc_id
 					
 					desc_record = self.build_record(
 						desc, output_fields,
-						relative_path=relative_path, depth=desc_depth,
+						relative_path=relative_path,
+						relative_id_path=relative_id_path,
+						depth=desc_depth,
 					)
 					
 					if max_depth is None or desc_depth <= max_depth:
@@ -331,10 +341,10 @@ class ItemTreeScanner:
 					if desc_record.is_folder():
 						if max_depth is None or needs_descendant_agg or desc_depth < max_depth:
 							# 子アイテムがフォルダの場合は、さらにその内部を走査するためスタックに積む（行きがけ処理）
-							stack.append((desc['id'], relative_path, desc_depth, False))
+							stack.append((desc['id'], relative_path, relative_id_path, desc_depth, False))
 					elif needs_descendant_agg:
 						# 子アイテムがファイルで、集約が必要な場合は、自身の情報を親へ伝播させるため帰りがけ処理のみ積む
-						stack.append((desc['id'], relative_path, desc_depth, True))
+						stack.append((desc['id'], relative_path, relative_id_path, desc_depth, True))
 					
 					# 子孫アイテムの処理完了を報告
 					progress.update(0, descendant_increment=1)
