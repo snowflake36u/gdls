@@ -10,7 +10,7 @@ from progress_reporter import ProgressEvent
 from progress_reporter.tqdm_reporter import TqdmProgressReporter
 from progress_reporter.trigger import IntervalTrigger
 
-from .config import (
+from .paths import (
 	APP_NAME, get_output_path,
 )
 from .exporter import RecordExporter
