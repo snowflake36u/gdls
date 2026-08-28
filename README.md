@@ -1,35 +1,39 @@
 # gdls: Google Drive List
 
-`gdls` is a command-line tool that lists contents of a Google Drive folder in an `ls`-like format.
+`gdls` is a command-line tool for exploring Google Drive in an `ls`-like format.
 
-It can list file and folder names, and other fields based on API such as size and modification time, and supports TSV/CSV/JSON output to stdout or files. It also supports recursive traversal, aggregating statistics, and sorting.
+It is designed for **inspecting the contents and structure of Google Drive**, rather than modifying them. It can recursively traverse folders, display metadata, calculate aggregate statistics, and export results in formats suitable for further processing.
 
 ## Features
 
-- List the direct children of a Google Drive folder or a single target item
+- List files and folders in a Google Drive folder
 - Traverse subfolders recursively with optional depth limits
-- Compute aggregated statistics such as `totalSize`, `itemCount`, and `oldestCreatedTime`
-- Export results to TSV, CSV, or JSON
-- Sort output by one or more fields
-- Render terminal output as a compact table when stdout is a TTY
-- Display detailed single-item metadata in a readable format
-- Use read-only Google OAuth 2.0 credentials
-- Refresh expired tokens automatically
+- Display detailed metadata for individual items
+- Calculate aggregate statistics such as total size and item counts
+- Select fields to display or export
+- Sort results by one or more fields
+- Export results as TSV, CSV, or JSON
+- Provide relative paths and hierarchy information for recursive results
+- Render a compact table when output is connected to a terminal
+- Work with read-only Google OAuth 2.0 credentials
+- Automatically refresh expired authentication tokens
+
+## Why `gdls`?
+
+Google Drive can be accessed through many existing command-line tools. `gdls` focuses on a narrower use case: **inspecting Google Drive as a hierarchical items and output statistics of them in the table format**.
+
+It provides an `ls`-like interface centered around read-only exploration, metadata, hierarchy, and aggregate statistics. File transfer, synchronization, and other operations that modify Drive are outside its scope.
 
 ## Requirements
 
 - Python 3.10+
 - A Google Cloud project with the Google Drive API enabled
-- Dependency installation via `pyproject.toml`
-  - `google-api-python-client`
-  - `google-auth-oauthlib`
-  - `tqdm`
-  - `platformdirs`
-  - `progress-reporters`
+- An OAuth 2.0 client ID for a desktop application
+- Dependencies installed from `pyproject.toml`
 
 ## Installation
 
-For local development / editable install:
+For local development / editable installation:
 
 ```bash
 git clone https://github.com/snowflake36u/gdls
@@ -37,39 +41,39 @@ cd gdls
 python -m pip install -e .
 ```
 
-**(Not supported yet)** If published to PyPI, installation is also:
-
-```bash
-pip install gdls
-```
-
-After installation, the command is available from the shell:
+After installation:
 
 ```bash
 gdls --help
 ```
 
+> PyPI installation is not supported yet.
+
 ## Authentication
 
-OAuth 2.0 credentials are required to access the Google Drive API.
+`gdls` uses OAuth 2.0 credentials to access the Google Drive API.
 
-1. Create a project in the Google Cloud Console.
+1. Create a project in Google Cloud Console.
 2. Enable the Google Drive API.
-3. Create an OAuth 2.0 client ID for a desktop app.
+3. Create an OAuth 2.0 client ID for a desktop application.
 4. Download `client_secret.json`.
-5. Place it in the default app-data directory, or pass it explicitly with `--client-secret`.
+5. Place it in the default user-data directory, or specify it with `--client-secret`.
 
-| OS            | Location                                      |
-| ------------- | --------------------------------------------- |
-| Windows       | `LOCALAPPDATA\SnowyTools\gdls\token.json` |
+Default locations for the authentication token are:
+
+| OS            | Location                                    |
+| ------------- | ------------------------------------------- |
+| Windows       | `%LOCALAPPDATA&\SnowyTools\gdls\token.json` |
 | macOS / Linux | `~/.local/share/SnowyTools/gdls/token.json` |
 
-On the first run, a browser window opens for authentication and a `token.json` file is created automatically in the same user-data directory.
+On the first run, a browser window opens for authentication and the OAuth token is stored automatically.
 
-You can override the default file locations at runtime with:
+You can override both paths with environment variables `GDLS_CLIENT_SECRET_FILE` and `GDLS_TOKEN_FILE`, or options:
 
 ```bash
-gdls <TARGET> --client-secret /path/to/client_secret.json --token-file /path/to/token.json
+gdls <TARGET> \
+  --client-secret /path/to/client_secret.json \
+  --token-file /path/to/token.json
 ```
 
 ## Usage
@@ -82,106 +86,66 @@ gdls <TARGET>
 
 This lists the items directly under the specified folder.
 
-The target can be a folder ID, a Google Drive folder URL, a file URL, `root`, or `/`:
+`<TARGET>` can be a folder/file ID, a Google Drive URL, `root`, or `/`.
 
 ```bash
 gdls 1ABC123xyzABC123xyzABC123xyz
 gdls https://drive.google.com/drive/folders/1ABC123xyzABC123xyzABC123xyz
-gdls https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+gdls https://drive.google.com/file/d/FILE_ID/view
 gdls root
 gdls /
 ```
 
-By default, result is output to stdout in TSV format when not attached to a TTY. When `-o/--output` is used without `-O/--output-format`, the file is written as TSV.
-
-### Common options
+### Examples
 
 ```bash
 # Show the default long-format columns
 # (permissions, owners, size, modifiedTime, id, name)
 gdls <TARGET> -l
 
-# Show information for the target item itself
-gdls <TARGET> -i
-
-# Show detailed metadata for a single item in a readable format
-gdls <TARGET> -D
-
-# Limit recursion depth to 2 levels
-gdls <TARGET> -R -d 2
-
-# Specify output fields
+# Show selected fields
 gdls <TARGET> -f "id,name,size,createdTime,modifiedTime"
 
-# Recursively list files and folders
+# Show detailed metadata for a single item
+gdls <TARGET> -D
+
+# Recursively list items under a folder
 gdls <TARGET> -R
 
-# Output to stdout in JSON format
+# Sort recursively by file size
+gdls <TARGET> -R -f "id,name,size" -s "size desc"
+
+# Display/Output JSON
 gdls <TARGET> -R -F json
 
-# Output to a file in JSON format
-gdls <TARGET> -R -o drive_data.json -O json
+# Write CSV to a file
+gdls <TARGET> -lR -o drive_data.csv -O csv
 
-# Output to a file
-gdls <TARGET> -l -o output.tsv
-
-# Append to an existing file
-gdls <TARGET_1> -l -o combined.tsv
-gdls <TARGET_2> -l -o combined.tsv --append --no-header
-
-# Sort results (use ' desc' for descending order)
-gdls <TARGET> -R -f "name,size" -s "size desc"
-
-# Pipe processing while suppressing logs/progress
+# Find PDFs in a hierarchy
 gdls <TARGET> -R -q | grep "\.pdf$"
+
+# Get aggregate statistics for a single folder:
+gdls <TARGET> -i -f "id,name,totalSize,itemCount"
 ```
 
-## Output formats
+### Output
 
-### TSV
-
-TSV is the default format for stdout when output is not a TTY, and it is also the default file format for `-o/--output` when no explicit file format is requested.
-
-When written directly to a terminal, the output is rendered as an auto-aligned table. When redirected to a file or piped, it emits raw tab-separated records.
+When connected to a terminal, `gdls` displays an auto-aligned table. When output is redirected or piped, it emits TSV-formatted records by default.
 
 ```bash
 gdls <TARGET> -l
 gdls <TARGET> -l > files.tsv
-```
-
-Use `--no-header` to omit the column header row.
-
-### CSV and JSON
-
-```bash
-# CSV to stdout
 gdls <TARGET> -F csv
-
-# CSV to a file
-gdls <TARGET> -o drive_data.csv -O csv
-
-# JSON to stdout
 gdls <TARGET> -F json
-
-# JSON to a file
-gdls <TARGET> -o drive_data.json -O json
 ```
 
-These formats are useful for downstream processing, filtering, or importing into other tools.
+Use `--no-header` to omit the header row.
 
-### Terminal display
+### Fields
 
-When output is sent to a terminal, `gdls` provides:
+Standard Google Drive API fields can be selected with `--fields`.
 
-- a compact auto-aligned table
-- folder and shortcut highlighting in color
-- a progress bar during recursive scanning
-
-Color formatting is automatically disabled when output is redirected to a file or piped.
-
-## Custom output fields
-
-In addition to standard Google Drive API fields, the following custom fields are supported by `--fields`:
+`gdls` also provides fields derived from the Drive hierarchy:
 
 | Field | Description |
 | --- | --- |
@@ -197,65 +161,49 @@ In addition to standard Google Drive API fields, the following custom fields are
 | `childFolderCount` | Number of direct child folders |
 | `totalSize` | Sum of descendant file sizes |
 | `totalQuotaBytesUsed` | Sum of descendant quota usage |
-| `oldestCreatedTime` | Oldest creation time among descendant items |
-| `latestCreatedTime` | Latest creation time among descendant items |
-| `oldestModifiedTime` | Oldest modified time among descendant items |
-| `latestModifiedTime` | Latest modified time among descendant items |
+| `oldestCreatedTime` | Oldest creation time among descendants |
+| `latestCreatedTime` | Latest creation time among descendants |
+| `oldestModifiedTime` | Oldest modification time among descendants |
+| `latestModifiedTime` | Latest modification time among descendants |
 
-Fields that require descendant aggregation (`totalSize`, `itemCount`, `oldestCreatedTime`, etc.) automatically cause recursive scanning to run.
+Fields requiring descendant aggregation automatically trigger recursive scanning.
 
 ## Command-line options
 
 | Option | Description |
 | --- | --- |
 | `target` | Google Drive file/folder URL or ID |
-| `-R`, `--recursive` | Recursively list descendant items |
-| `-t`, `--include-trashed` | Include trashed items in the results |
-| `-d`, `--depth` | Maximum depth when recursively scanning |
-| `-i`, `--item` | Fetch only the target item itself |
-| `-D`, `--describe` | Show a detailed human-readable description of a single item |
-| `-l`, `--long` | Use the default long-format field set |
-| `-f`, `--fields` | Comma-separated list of output fields |
-| `-s`, `--sort` | Sort output by one or more keys, e.g. `size desc, name` |
-| `-F`, `--format` | Console output format: `auto`, `table`, `tsv`, `csv`, `json` |
-| `-H`, `--no-header` | Suppress the header row for TSV/CSV output |
+| `-R`, `--recursive` | Recursively list descendants |
+| `-t`, `--include-trashed` | Include trashed items |
+| `-d`, `--depth` | Maximum recursion depth |
+| `-i`, `--item` | Fetch only the target item |
+| `-D`, `--describe` | Show a detailed description of a single item |
+| `-l`, `--long` | Use the default long-format fields |
+| `-f`, `--fields` | Comma-separated output fields |
+| `-s`, `--sort` | Sort by one or more fields |
+| `-F`, `--format` | Output format: `auto`, `table`, `tsv`, `csv`, `json` |
+| `-H`, `--no-header` | Suppress TSV/CSV headers |
 | `-o`, `--output` | Write results to a file |
-| `-O`, `--output-format` | File format when using `--output`: `tsv`, `csv`, `json` |
+| `-O`, `--output-format` | File format: `tsv`, `csv`, `json` |
 | `-a`, `--append` | Append to an existing output file |
-| `--log-level` | Log verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
-| `-q`, `--quiet` | Suppress progress bars and non-error log messages |
-| `--client-secret` | Explicit path to `client_secret.json` |
-| `--token-file` | Explicit path to `token.json` |
-| `-h`, `--help` | Show the help message |
-
-## Examples
-
-### Get total size for a folder
-
-```bash
-gdls <TARGET> -i -f "id,name,totalSize"
-```
-
-### Show a detailed single-item view
-
-```bash
-gdls <TARGET> -D
-```
+| `--log-level` | Log verbosity |
+| `-q`, `--quiet` | Suppress progress display and non-error logs |
+| `--client-secret` | Path to `client_secret.json` |
+| `--token-file` | Path to `token.json` |
+| `-h`, `--help` | Show help |
 
 ## Troubleshooting
 
-### "command not found" or command is not recognized
+### `command not found`
 
-If `gdls` is not recognized after installation, ensure the Python script directory is present in `PATH`.
+Ensure that the Python script directory is included in `PATH`.
 
 - Windows: `C:\Users\<User>\AppData\Local\Programs\Python\Python3x\Scripts` or `%APPDATA%\Python\Python3x\Scripts`
 - Linux / macOS: `~/.local/bin`
 
-### Missing client secret file
+### Missing client secret
 
-Ensure `client_secret.json` is located in the appropriate directory.
-
-Alternatively, explicitly pass the path using the CLI option:
+Ensure that `client_secret.json` is in the appropriate directory, or specify its location explicitly:
 
 ```bash
 gdls <TARGET> --client-secret /path/to/client_secret.json
@@ -263,15 +211,15 @@ gdls <TARGET> --client-secret /path/to/client_secret.json
 
 ### Authentication errors
 
-If token refresh or consent fails, remove the cached `token.json` and re-run `gdls`.
+Remove the cached OAuth token and authenticate again.
 
-**Windows**:
+**Windows:**
 
 ```powershell
 Remove-Item "$env:LOCALAPPDATA\SnowyTools\gdls\token.json" -ErrorAction SilentlyContinue
 ```
 
-**macOS / Linux**:
+**macOS / Linux:**
 
 ```bash
 rm -f ~/.local/share/SnowyTools/gdls/token.json
@@ -279,17 +227,20 @@ rm -f ~/.local/share/SnowyTools/gdls/token.json
 
 ### Folder not found
 
-Check the following:
+Check that:
 
 - the folder ID or URL is correct
 - your Google account has access to the folder
-- the item is not trashed; use `--include-trashed` if needed
+- the item is not in the trash, or use `--include-trashed` if necessary
 
-### Slow performance on large folders
+### Slow recursive scans
 
-- Avoid recursive scanning unless necessary
-- Avoid aggregative fields such as `totalSize` or `oldestCreatedTime` when not needed
-- Use `--quiet` to suppress progress display
+Recursive scans are required for descendant-based fields such as `totalSize` and `itemCount`.
+
+For large folders:
+
+- avoid recursive scanning when it is not needed
+- Avoid aggregate fields such as `totalSize` or `oldestCreatedTime` when they are not needed
 
 ## License
 
