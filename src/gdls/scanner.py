@@ -1,4 +1,4 @@
-from progress_reporter import ProgressReporter, NullProgressReporter
+from progress_reporters import ProgressReporter, NullProgressReporter
 
 from .models import DriveItem
 from .repository import DriveRepository

@@ -6,9 +6,9 @@ import sys
 
 from pathlib import Path
 
-from progress_reporter import ProgressEvent
-from progress_reporter.tqdm_reporter import TqdmProgressReporter
-from progress_reporter.trigger import IntervalTrigger
+from progress_reporters import ProgressEvent
+from progress_reporters.tqdm_reporter import TqdmProgressReporter
+from progress_reporters.trigger import IntervalTrigger
 
 from .paths import (
 	APP_NAME, get_output_path,

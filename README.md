@@ -22,7 +22,7 @@ It displays file and folder names, sizes, modification dates, owners, and more. 
 - Python 3.10+
 - Google Drive API enabled
 - Dependencies managed in `pyproject.toml`
-  - progress-reporter (https://github.com/snowflake36u/progress-reporter.git)
+  - progress-reporters (https://github.com/snowflake36u/progress-reporters.git)
   - and others
 
 ## Installation
