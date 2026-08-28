@@ -3,11 +3,8 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import Resource, build
 
-from .paths import (
-	ensure_app_data_dir,
-	get_client_secret_file,
-	get_token_file,
-)
+from pathlib import Path
+from .paths import ensure_app_data_dir, resolve_user_data_path
 
 # スコープの設定（読み取り専用）
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
@@ -28,8 +25,10 @@ def get_drive_service(
 	Raises:
 		FileNotFoundError: クライアントシークレットファイルが存在しない場合。
 	"""
-	secret_path = get_client_secret_file(client_secret_file)
-	token_path = get_token_file(token_file)
+	secret_path = Path(client_secret_file) if client_secret_file \
+		else resolve_user_data_path('client_secret.json')
+	token_path = Path(token_file) if token_file \
+		else resolve_user_data_path('token.json')
 	
 	ensure_app_data_dir()
 	creds = None

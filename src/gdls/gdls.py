@@ -10,9 +10,7 @@ from progress_reporters import ProgressEvent
 from progress_reporters.tqdm_reporter import TqdmProgressReporter
 from progress_reporters.trigger import IntervalTrigger
 
-from .paths import (
-	APP_NAME, get_output_path,
-)
+from .paths import APP_NAME
 from .exporter import RecordExporter
 from .models import DriveItem
 from .repository import DriveRepository
@@ -265,7 +263,7 @@ class GdlsController:
 		else:
 			output_fields = ['name']
 		
-		output_path = get_output_path(output) if output else None
+		output_path = Path.cwd() / output if output else None
 		
 		# APIに問い合わせる属性を決定する
 		root_api_fields, descendant_api_fields = get_required_api_fields(output_fields)
