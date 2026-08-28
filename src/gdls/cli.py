@@ -4,6 +4,7 @@ import argparse
 import logging
 import sys
 
+from .exceptions import GdlsError
 from .gdls import gdls, parse_fields_arg, validate_arguments
 from .logging_utils import configure_logger
 from .paths import APP_NAME
@@ -130,15 +131,14 @@ def main() -> int:
 			logger=logger,
 		)
 		return 0
+	except GdlsError as exc:
+		logger.error(exc.format_for_cli())
+		return exc.exit_code
 	except ValueError as exc:
 		logger.error(f"Error: {exc}")
 		return 2
 	except FileNotFoundError as exc:
-		logger.error(f"Error: {exc}")
-		logger.error(
-			"Please place the client secret JSON file at the expected "
-			"location or provide its path via --client-secret."
-		)
+		logger.error(f"File not found: {exc}")
 		return 1
 	except KeyboardInterrupt:
 		logger.error("Operation cancelled by user.")

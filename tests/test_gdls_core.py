@@ -9,6 +9,7 @@ from googleapiclient.errors import HttpError
 
 from gdls import gdls as gdls_entry
 from gdls.cli import parse_fields_arg, validate_arguments
+from gdls.exceptions import CredentialFileNotFoundError, GdlsValueError
 from gdls.gdls import GdlsController, extract_drive_id, sort_records
 from gdls.models import DriveItem
 from gdls.repository import DriveRepository
@@ -116,6 +117,51 @@ def test_package_exposes_importable_gdls_function(monkeypatch):
 	assert result == ["returned-row"]
 	assert captured["target_id"] == "ABC123xyz"
 	assert captured["sort_arg"] == "name"
+
+def test_custom_exceptions_are_structured_and_cli_friendly():
+	exc = CredentialFileNotFoundError(
+		"missing/client_secret.json",
+		default_location="C:/Users/test/AppData/Local/SnowyTools/gdls/client_secret.json",
+		env_var="GDLS_CLIENT_SECRET_FILE",
+	)
+	assert isinstance(exc, FileNotFoundError)
+	assert isinstance(exc, GdlsValueError) is False
+	assert exc.details["default_location"].endswith("client_secret.json")
+	formatted = exc.format_for_cli()
+	assert "Credential file not found" in formatted
+	assert "Hint:" in formatted
+	assert "--client-secret" in formatted
+	assert "GDLS_CLIENT_SECRET_FILE" in formatted
+
+def test_gdls_wraps_missing_client_secret_as_structured_exception(monkeypatch):
+	monkeypatch.setenv("GDLS_CLIENT_SECRET_FILE", "/tmp/client_secret.json")
+	gdls_module = importlib.import_module("gdls.gdls")
+	
+	def raise_missing(*args, **kwargs):
+		raise FileNotFoundError("missing")
+	
+	monkeypatch.setattr(gdls_module, "get_drive_service", raise_missing)
+	with pytest.raises(CredentialFileNotFoundError) as exc_info:
+		gdls_entry(
+			"https://drive.google.com/drive/folders/ABC123xyz",
+			logger=logging.getLogger("gdls-test"),
+		)
+	assert exc_info.value.details["env_var"] == "GDLS_CLIENT_SECRET_FILE"
+
+
+def test_validate_arguments_raises_custom_value_error_for_invalid_usage():
+	append_args = Namespace(
+		append=True,
+		output=None,
+		no_header=False,
+		format="tsv",
+		output_format=None,
+		describe=False,
+		item=False,
+		recursive=False,
+	)
+	with pytest.raises(GdlsValueError, match="--append"):
+		validate_arguments(append_args)
 
 
 def test_drive_repository_retries_transient_http_errors_and_succeeds(monkeypatch):

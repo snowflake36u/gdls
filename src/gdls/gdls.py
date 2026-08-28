@@ -14,7 +14,8 @@ from progress_reporters.trigger import IntervalTrigger
 
 from .logging_utils import configure_logger
 from .auth import get_drive_service
-from .paths import APP_NAME
+from .exceptions import CredentialFileNotFoundError, GdlsValueError
+from .paths import APP_NAME, resolve_runtime_path, resolve_user_data_path, ensure_app_data_dir
 from .exporter import RecordExporter
 from .models import DriveItem
 from .repository import DriveRepository
@@ -101,31 +102,31 @@ def validate_arguments(args: object) -> None:
 		args: 実行時に利用する CLI フラグを持つオブジェクト。
 
 	Raises:
-		ValueError: 互換しない引数の組み合わせや依存関係の不整合があった場合。
+		GdlsValueError: 互換しない引数の組み合わせや依存関係の不整合があった場合。
 	"""
 	if not hasattr(args, 'append'):
 		return
 	
 	if args.append and not getattr(args, 'output', None):
-		raise ValueError("The '--append' option requires '--output'.")
+		raise GdlsValueError("The '--append' option requires '--output'.")
 	
 	if getattr(args, 'no_header', False) and getattr(args, 'format', None) == 'json':
-		raise ValueError("The '--no-header' option cannot be used with JSON stdout-format.")
+		raise GdlsValueError("The '--no-header' option cannot be used with JSON stdout-format.")
 	
 	if getattr(args, 'no_header', False) and getattr(args, 'output_format', None) == 'json':
-		raise ValueError("The '--no-header' option cannot be used with JSON output-format.")
+		raise GdlsValueError("The '--no-header' option cannot be used with JSON output-format.")
 	
 	if getattr(args, 'describe', False) and getattr(args, 'no_header', False):
-		raise ValueError("The '--no-header' option cannot be used with '--describe'.")
+		raise GdlsValueError("The '--no-header' option cannot be used with '--describe'.")
 	
 	if getattr(args, 'output', None) is None and getattr(args, 'output_format', None) is not None:
-		raise ValueError("The '--output-format' option is valid only when '--output' is specified.")
+		raise GdlsValueError("The '--output-format' option is valid only when '--output' is specified.")
 	
 	if (getattr(args, 'item', False) or getattr(args, 'describe', False)) and getattr(args, 'recursive', False):
-		raise ValueError("The '--item'/'--describe' options are exclusive with '--recursive'.")
+		raise GdlsValueError("The '--item'/'--describe' options are exclusive with '--recursive'.")
 	
 	if getattr(args, 'depth', None) and not getattr(args, 'recursive', False):
-		raise ValueError("The '--depth' option requires '--recursive'.")
+		raise GdlsValueError("The '--depth' option requires '--recursive'.")
 
 def get_sort_value(key: str, val: object) -> tuple[int, object]:
 	"""型の異なる値や文字列形式の非文字列値を比較可能にするためのソートキーを生成する。
@@ -298,6 +299,7 @@ class GdlsController:
 			append_mode: 既存ファイルに追記するかどうか。
 			quiet: 進捗バーと非エラーログを抑制するかどうか。
 			sort_arg: カンマ区切りのソート指定文字列。
+			logger: ログ出力に使う logger。未指定時は独自のロガーを生成する。
 		
 		Raises:
 			Exception: Google Drive APIで取得に失敗した場合。
@@ -659,10 +661,14 @@ def gdls(
 	})()
 	
 	validate_arguments(args)
+	ensure_app_data_dir()
 	
 	target_id = extract_drive_id(target)
 	if not target_id:
-		raise ValueError("Unable to extract a valid folder ID.")
+		raise GdlsValueError(
+			"Unable to extract a valid folder ID.",
+			hint="Use a Google Drive folder/file URL, an item ID, '/', or 'root'.",
+		)
 	
 	if args.long:
 		output_fields = DEFAULT_LONG_FIELDS
@@ -670,10 +676,40 @@ def gdls(
 		output_fields = parse_fields_arg(args.fields) if isinstance(args.fields, str) else list(args.fields) if args.fields else None
 	
 	output_format = args.output_format or 'tsv'
-	service = get_drive_service(
-		client_secret_file=args.client_secret,
-		token_file=args.token_file,
+	
+	# 認証ファイルパスの特定
+	default_client_secret = resolve_user_data_path('client_secret.json')
+	default_token_file = resolve_user_data_path('token.json')
+	
+	resolved_client_secret, secret_source = resolve_runtime_path(
+		args.client_secret,
+		'GDLS_CLIENT_SECRET_FILE',
+		default_client_secret,
 	)
+	resolved_token_file, token_source = resolve_runtime_path(
+		args.token_file,
+		'GDLS_TOKEN_FILE',
+		default_token_file,
+	)
+	
+	# 確定したパスを渡して認証を実行
+	try:
+		service = get_drive_service(
+			client_secret_file=resolved_client_secret,
+			token_file=resolved_token_file,
+		)
+	except FileNotFoundError as exc:
+		# ユーザーが client_secret を明示指定したわけではない場合、
+		# 環境変数による設定が可能であることをヒントとして含める
+		env_var = 'GDLS_CLIENT_SECRET_FILE' if secret_source != 'explicit' else None
+		
+		# auth.py から伝播してきた FileNotFoundError を、詳細な文脈を持った専用例外に包み直す
+		raise CredentialFileNotFoundError(
+			resolved_client_secret,
+			default_location=default_client_secret,
+			env_var=env_var,
+		) from exc
+	
 	repository = DriveRepository(service)
 	controller = GdlsController(repository)
 	return controller.execute(
