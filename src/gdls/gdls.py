@@ -585,15 +585,45 @@ def gdls(
 		color: bool = False,
 		stream=None,
 ) -> list[DriveItem]:
-	"""ライブラリ公開用のメイン処理。
-	
+	"""Google Drive から対象アイテムを取得し、必要に応じて再帰探索・ソート・出力までをまとめて実行する。
+
+	この関数はライブラリ利用者向けの公開 API であり、CLI からの呼び出しも
+	内部的にはこの関数を経由する。対象の Google Drive URL あるいは ID を
+	受け取り、認証済みの Drive API クライアントを作成してリポジトリと
+	コントローラを組み立てたうえで、指定されたフィールドや書式でレコードを
+	取得・整形・出力する。
+
 	Args:
-		target: Google DriveのURLまたはID。
-		logger: ログ出力先のLogger。未指定時は内部ロガーを作成する。
-		color: logger 未指定時に色付けログを使うかどうか。
-		
+		target: Google Drive のファイルまたはフォルダの URL、またはアイテム ID。
+		recursive: 対象フォルダ配下を再帰的に探索して子孫アイテムも取得するかどうか。
+		include_trashed: ゴミ箱内のアイテムも結果に含めるかどうか。
+		depth: recursive=True 時に探索の最大深さを制限する。None なら制限なし。
+		item: 対象そのものだけを取得して出力するかどうか。
+		describe: 対象アイテムを人間向けの詳細表示形式で出力するかどうか。
+		sort: カンマ区切りのソート指定。例: "size desc, name"。
+		long: 事前定義された基本フィールド一覧を使用するかどうか。
+		fields: 出力対象フィールドの文字列または一覧。long=True の場合は優先される。
+		output: 出力先ファイルパス。指定時は結果をファイルへも書き出す。
+		output_format: 出力ファイルの形式。'tsv' / 'csv' / 'json' のいずれか。
+		append: 既存の出力ファイルへ追記するかどうか。
+		stdout_format: 標準出力の形式。'auto' / 'table' / 'tsv' / 'csv' / 'json'。
+		no_header: TSV 形式の出力時にヘッダー行を抑制するかどうか。
+		quiet: 進捗バーや通常ログを抑制し、エラーのみを表示するかどうか。
+		client_secret: OAuth 用の client_secret.json のパス。未指定時は環境変数や既定ロケーションを利用する。
+		token_file: 認証トークンの保存先 JSON パス。未指定時は既定ファイルを利用する。
+		log_level: ログレベル。'DEBUG' / 'INFO' / 'WARNING' / 'ERROR' / 'CRITICAL'。
+		logger: ログ出力に使う logger。未指定時は内部で生成する。
+		color: logger 未指定時にカラー付きログを使うかどうか。
+		stream: logger 未指定時に使用する出力ストリーム。
+
 	Returns:
-		取得したレコード一覧。
+		取得・整形された ``DriveItem`` のリスト。出力先にファイルを書き出した場合でも、
+		関数の戻り値としてレコード一覧を返す。
+
+	Raises:
+		ValueError: 引数の組み合わせが不正、または対象 ID の抽出に失敗した場合。
+		FileNotFoundError: 認証用 JSON ファイルが見つからない場合。
+		Exception: Google Drive API やファイル出力処理で予期しない失敗が発生した場合。
 	"""
 	if quiet:
 		log_level = 'ERROR'

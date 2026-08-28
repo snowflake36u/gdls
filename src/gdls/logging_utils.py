@@ -53,8 +53,9 @@ def configure_logger(
 	logger.setLevel(numeric_level)
 	logger.propagate = False
 	
-	if logger.handlers:
-		return logger
+	for handler in list(logger.handlers):
+		logger.removeHandler(handler)
+		handler.close()
 	
 	handler = logging.StreamHandler(stream or sys.stderr)
 	handler.setFormatter(
