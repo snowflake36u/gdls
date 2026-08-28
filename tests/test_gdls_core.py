@@ -1,10 +1,13 @@
 from argparse import Namespace
+import importlib
+import logging
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 from googleapiclient.errors import HttpError
 
+from gdls import gdls as gdls_entry
 from gdls.cli import parse_fields_arg, validate_arguments
 from gdls.gdls import GdlsController, extract_drive_id, sort_records
 from gdls.models import DriveItem
@@ -86,6 +89,34 @@ def test_validate_arguments_rejects_invalid_option_combinations():
 	)
 	with pytest.raises(ValueError, match="--item.*--recursive|--recursive.*--item"):
 		validate_arguments(item_conflict)
+
+def test_package_exposes_importable_gdls_function(monkeypatch):
+	captured = { }
+	gdls_module = importlib.import_module("gdls.gdls")
+	
+	class DummyController:
+		def __init__(self, repository):
+			captured["repository"] = repository
+		
+		def execute(self, **kwargs):
+			captured.update(kwargs)
+			return ["returned-row"]
+	
+	monkeypatch.setattr(gdls_module, "get_drive_service", lambda **kwargs: object())
+	monkeypatch.setattr(gdls_module, "DriveRepository", lambda service: service)
+	monkeypatch.setattr(gdls_module, "GdlsController", DummyController)
+	
+	result = gdls_entry(
+		"https://drive.google.com/drive/folders/ABC123xyz",
+		sort="name",
+		output="out.tsv",
+		logger=logging.getLogger("gdls-test"),
+		color=True,
+	)
+	assert result == ["returned-row"]
+	assert captured["target_id"] == "ABC123xyz"
+	assert captured["sort_arg"] == "name"
+
 
 def test_drive_repository_retries_transient_http_errors_and_succeeds(monkeypatch):
 	request = Mock()
