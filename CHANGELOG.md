@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.6.1 (2026-08-29)
+
+### Documentation
+
+- Enhance README with detailed usage examples and clarify features
+  ([`69e3ca6`](https://github.com/snowflake36u/gdls/commit/69e3ca6f4b18fac50f2ece7b0cfa579bc758c0ea))
+
+
 ## v0.6.0 (2026-08-29)
 
 ### Bug Fixes
